@@ -3,18 +3,26 @@
     "step": {
       "user": {
         "title": "neoom AI Setup",
-        "description": "Bitte gib deine neoom AI und BEAAM Daten ein.",
+        "description": "Bitte gib deine neoom AI und BEAAM Daten ein. Der passende Standort (Site ID) wird anschließend automatisch aus deinem Account ermittelt.",
         "data": {
           "cloud_token": "neoom AI Bearer Token",
-          "site_id": "Site ID (UUID)",
           "beaam_ip": "Lokale IP des BEAAM (z.B. 192.168.1.50)",
           "beaam_key": "BEAAM API Key"
+        }
+      },
+      "select_site": {
+        "title": "Standort auswählen",
+        "description": "Es wurden mehrere Standorte in deinem neoom AI Account gefunden. Bitte wähle den gewünschten Standort aus:",
+        "data": {
+          "site_id": "Standort"
         }
       }
     },
     "error": {
       "cannot_connect": "Verbindung fehlgeschlagen",
-      "invalid_auth": "Ungültige Zugangsdaten"
+      "invalid_auth": "Ungültige Zugangsdaten",
+      "cannot_connect_cloud": "Verbindung zur neoom AI Cloud fehlgeschlagen. Überprüfe dein Token und deine Internetverbindung.",
+      "no_sites_found": "Keine Standorte (Sites) in deinem neoom AI Account gefunden."
     }
   }
 }

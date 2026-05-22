@@ -1,0 +1,25 @@
+ingest_state:
+  name: Messwert an Gateway senden
+  description: Überträgt den aktuellen Wert eines Home Assistant Sensors/Zustands (z.B. Temperatur, Stromstärke) an ein generisches Gerät im BEAAM Gateway.
+  fields:
+    thing_id:
+      name: Thing ID (Geräte ID)
+      description: Die eindeutige ID (UUID) des generischen Zielgeräts im neoom System (siehe Site-Konfiguration).
+      required: true
+      example: "d4f65a33-ee5c-421d-855d-2d5682a4bc4d"
+      selector:
+        text:
+    key:
+      name: Datenpunkt Schlüssel
+      description: Der Schlüssel des Datenpunkts, für den der Zustand eingespielt werden soll (z.B. CURRENT_P1, ACTIVE_POWER).
+      required: true
+      example: "CURRENT_P1"
+      selector:
+        text:
+    value:
+      name: Wert
+      description: Der neue einzuspielende Wert. Kann eine Zahl, ein Text oder ein Boolean sein.
+      required: true
+      example: 0.3
+      selector:
+        text:

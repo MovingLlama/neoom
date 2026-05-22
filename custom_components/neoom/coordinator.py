@@ -310,10 +310,52 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     # Wenn wir einen Wert erfolgreich geschrieben haben, signalisieren wir 
                     # dem Koordinator, dass er sofort frische Daten vom Gateway holen soll.
                     # Dadurch kann die Home Assistant Oberfläche den geänderten Wert ohne
-                    # große Verzögerung anziegen.
+                     # große Verzögerung anziegen.
                     await self.async_request_refresh()
         except Exception as err:
             LOGGER.error("Schwerwiegender Fehler beim Senden des Befehls an '%s': %s", thing_id, err)
+            raise
+
+    async def async_ingest_state(self, thing_id: str, key: str, value: Any) -> None:
+        """Pusht einen aktuellen Zustand (State Ingestion) an ein generisches Gerät im BEAAM.
+        
+        Wird beispielsweise aufgerufen, um Messwerte externer Sensoren an das Gateway zu übertragen.
+
+        Args:
+            thing_id: Die eindeutige ID des Zielgeräts (Thing).
+            key: Der Bezeichner des Datenpunkts (z.B. "CURRENT_P1").
+            value: Der einzuspielende Wert (Zahl, Text, Boolean).
+            
+        Raises:
+            Exception: Wenn der HTTP-Aufruf nicht erfolgreich ist oder ein Timeout auftritt.
+        """
+        url = f"http://{self.ip}/api/v1/things/{thing_id}/states"
+        headers = {
+            "Authorization": f"Bearer {self.key}",
+            "Content-Type": "application/json"
+        }
+        
+        # Die BEAAM API erwartet eine Liste von Zuständen als JSON Array
+        payload = [
+            {
+                "key": key,
+                "value": value
+            }
+        ]
+        
+        LOGGER.debug("Pushe Ingest-State an lokales BEAAM Gerät '%s': '%s' = '%s'", thing_id, key, value)
+        
+        try:
+            async with async_timeout.timeout(10):
+                async with self.session.post(url, headers=headers, json=payload) as resp:
+                    resp.raise_for_status()
+                    LOGGER.info("State erfolgreich an BEAAM ingestiert: %s -> %s", key, value)
+                    
+                    # Nach erfolgreichem Schreiben triggern wir einen Refresh, damit die neuen 
+                    # Sensordaten sofort auch in Home Assistant sichtbar werden.
+                    await self.async_request_refresh()
+        except Exception as err:
+            LOGGER.error("Schwerwiegender Fehler beim Ingestieren des States an '%s': %s", thing_id, err)
             raise
 
     async def close(self) -> None:

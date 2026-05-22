@@ -52,8 +52,7 @@ async def async_setup_entry(
     entities: List[SensorEntity] = []
 
     # --- CLOUD SENSOREN ---
-    # Diese Sensoren werden manuell erstellt, da wir wissen, 
-    # welche Tarifdaten die Cloud standardmäßig zurückgibt.
+    # 1. Manuelle Site-Level-Sensoren (Tarife & statische Grenzwerte)
     entities.append(
         NeoomCloudSensor(
             coordinator=cloud_coordinator,
@@ -72,6 +71,53 @@ async def async_setup_entry(
             icon="mdi:cash-plus",
         )
     )
+    entities.append(
+        NeoomCloudSensor(
+            coordinator=cloud_coordinator,
+            key="co2_factor",
+            name="CO2 Factor",
+            unit="kg/kWh",
+            icon="mdi:molecule-co2",
+        )
+    )
+    entities.append(
+        NeoomCloudSensor(
+            coordinator=cloud_coordinator,
+            key="max_network_utilization",
+            name="Max Network Utilization",
+            unit=UnitOfPower.WATT,
+            icon="mdi:transmission-tower",
+            device_class=SensorDeviceClass.POWER,
+        )
+    )
+
+    # 2. Cloud Energiefluss-Sensoren (Energy Flow)
+    # Aggregierte Live-Daten aus der Cloud als Fallback oder Ergänzung zu den lokalen Daten.
+    flow_definitions = [
+        ("power_production", "Power Production", UnitOfPower.WATT, "mdi:solar-power", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+        ("power_consumption", "Power Consumption", UnitOfPower.WATT, "mdi:flash", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+        ("power_consumption_calc", "Power Consumption Calc", UnitOfPower.WATT, "mdi:flash-outline", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+        ("power_grid", "Power Grid", UnitOfPower.WATT, "mdi:transmission-tower-export", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+        ("power_storage", "Power Storage", UnitOfPower.WATT, "mdi:battery-charge", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+        ("power_charging_stations", "Power Charging Stations", UnitOfPower.WATT, "mdi:ev-station", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+        ("power_appliances", "Power Appliances", UnitOfPower.WATT, "mdi:home-lightning-bolt", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+        ("power_heating", "Power Heating", UnitOfPower.WATT, "mdi:heat-pump", SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+        ("state_of_charge", "State of Charge", PERCENTAGE, "mdi:battery", SensorDeviceClass.BATTERY, SensorStateClass.MEASUREMENT),
+        ("self_sufficiency", "Self Sufficiency", PERCENTAGE, "mdi:gauge", None, SensorStateClass.MEASUREMENT),
+    ]
+
+    for key, name, unit, icon, device_class, state_class in flow_definitions:
+        entities.append(
+            NeoomCloudFlowSensor(
+                coordinator=cloud_coordinator,
+                key=key,
+                name=name,
+                unit=unit,
+                icon=icon,
+                device_class=device_class,
+                state_class=state_class,
+            )
+        )
 
     # --- LOKALE SENSOREN (Dynamisch) ---
     # Da das BEAAM Gateway je nach Standort unterschiedliche Geräte 
@@ -125,8 +171,10 @@ class NeoomCloudSensor(CoordinatorEntity, SensorEntity):
         coordinator: NeoomCloudCoordinator,
         key: str,
         name: str,
-        unit: str,
+        unit: Optional[str],
         icon: str,
+        device_class: Optional[SensorDeviceClass] = None,
+        state_class: Optional[SensorStateClass] = None,
     ) -> None:
         """Initialisiert den Cloud-Sensor."""
         super().__init__(coordinator)
@@ -134,6 +182,8 @@ class NeoomCloudSensor(CoordinatorEntity, SensorEntity):
         self._name = name
         self._attr_native_unit_of_measurement = unit
         self._attr_icon = icon
+        self._attr_device_class = device_class
+        self._attr_state_class = state_class
         
         # Eindeutige ID ist entscheidend für Home Assistant, um die Entität wiederzuerkennen
         self._attr_unique_id = f"{coordinator.site_id}_{key}"
@@ -158,6 +208,60 @@ class NeoomCloudSensor(CoordinatorEntity, SensorEntity):
         
         Gruppiert die Cloud-Sensoren zusammen unter einem "Gerät" in der UI.
         """
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.coordinator.site_id)},
+            name="neoom AI Cloud Site",
+            manufacturer="neoom",
+            model="Cloud API",
+        )
+
+
+class NeoomCloudFlowSensor(CoordinatorEntity, SensorEntity):
+    """Repräsentation eines Cloud-Energiefluss-Sensors (z.B. power_production)."""
+
+    def __init__(
+        self,
+        coordinator: NeoomCloudCoordinator,
+        key: str,
+        name: str,
+        unit: Optional[str],
+        icon: str,
+        device_class: Optional[SensorDeviceClass] = None,
+        state_class: Optional[SensorStateClass] = None,
+    ) -> None:
+        """Initialisiert den Cloud-Flow-Sensor."""
+        super().__init__(coordinator)
+        self._key = key
+        self._name = name
+        self._attr_native_unit_of_measurement = unit
+        self._attr_icon = icon
+        self._attr_device_class = device_class
+        self._attr_state_class = state_class
+        self._attr_unique_id = f"{coordinator.site_id}_flow_{key}"
+
+    @property
+    def name(self) -> str:
+        """Gibt den Anzeigenamen des Sensors zurück."""
+        return f"neoom Cloud {self._name}"
+
+    @property
+    def native_value(self) -> Any:
+        """Gibt den aktuellen Zustand/Wert des Sensors zurück."""
+        if not self.coordinator.data:
+            return None
+        
+        flow_data = self.coordinator.data.get("flow", {})
+        flow_item = flow_data.get(self._key)
+        
+        if isinstance(flow_item, dict):
+            val = flow_item.get("value")
+            if val is not None:
+                return float(val)
+        return None
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Gibt Informationen zum virtuellen Cloud-Gerät zurück."""
         return DeviceInfo(
             identifiers={(DOMAIN, self.coordinator.site_id)},
             name="neoom AI Cloud Site",

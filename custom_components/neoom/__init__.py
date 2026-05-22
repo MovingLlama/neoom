@@ -109,6 +109,47 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # asynchron für diesen Eintrag einzurichten.
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Registriere den Service zur Messwert-Einspeisung (State Ingestion), falls noch nicht geschehen
+    if not hass.services.has_service(DOMAIN, "ingest_state"):
+        async def async_handle_ingest_state(call) -> None:
+            """Behandelt den Ingest-State-Service-Aufruf."""
+            thing_id = call.data["thing_id"]
+            key = call.data["key"]
+            value = call.data["value"]
+            
+            # Suche den passenden lokalen Koordinator, der dieses Thing in seiner Konfiguration hat
+            found = False
+            for ent_id, ent_data in hass.data[DOMAIN].items():
+                local_coordinator = ent_data.get("local")
+                if local_coordinator:
+                    beaam_config = local_coordinator.beaam_config
+                    if (beaam_config and 
+                        "things" in beaam_config and 
+                        thing_id in beaam_config["things"]):
+                        await local_coordinator.async_ingest_state(thing_id, key, value)
+                        found = True
+                        break
+            
+            # Fallback: Wenn wir das Thing nicht in der Konfiguration finden,
+            # senden wir es an den ersten verfügbaren lokalen Koordinator
+            if not found:
+                for ent_id, ent_data in hass.data[DOMAIN].items():
+                    local_coordinator = ent_data.get("local")
+                    if local_coordinator:
+                        await local_coordinator.async_ingest_state(thing_id, key, value)
+                        found = True
+                        break
+            
+            if not found:
+                raise RuntimeError("Kein aktives neoom BEAAM Gateway gefunden, um den State zu senden.")
+
+        hass.services.async_register(
+            DOMAIN,
+            "ingest_state",
+            async_handle_ingest_state,
+        )
+        LOGGER.info("neoom AI Ingest-State-Service registriert.")
+
     LOGGER.info("neoom AI Einrichtung erfolgreich abgeschlossen.")
     return True
 
@@ -136,6 +177,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await data["cloud"].close()
         await data["local"].close()
         
+        # Wenn keine neoom Integrationen mehr aktiv sind, entfernen wir auch den Service
+        if not hass.data[DOMAIN] and hass.services.has_service(DOMAIN, "ingest_state"):
+            hass.services.async_remove(DOMAIN, "ingest_state")
+            LOGGER.info("neoom AI Ingest-State-Service entfernt.")
+            
         LOGGER.info("neoom AI Eintrag %s erfolgreich entladen.", entry.entry_id)
 
     return unload_ok
