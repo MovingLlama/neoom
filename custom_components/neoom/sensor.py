@@ -62,6 +62,7 @@ async def async_setup_entry(
             name="Electricity Price",
             unit="EUR/kWh",
             icon="mdi:currency-eur",
+            data_path="site",
         )
     )
     entities.append(
@@ -71,6 +72,17 @@ async def async_setup_entry(
             name="Feed-in Tariff",
             unit="ct/kWh",
             icon="mdi:cash-plus",
+            data_path="site",
+        )
+    )
+    entities.append(
+        NeoomCloudSensor(
+            coordinator=cloud_coordinator,
+            key="gateways_online_state",
+            name="Gateway Status",
+            unit=None,
+            icon="mdi:router-network",
+            data_path="flow",
         )
     )
 
@@ -126,8 +138,9 @@ class NeoomCloudSensor(CoordinatorEntity, SensorEntity):
         coordinator: NeoomCloudCoordinator,
         key: str,
         name: str,
-        unit: str,
+        unit: Optional[str],
         icon: str,
+        data_path: str = "site",
     ) -> None:
         """Initialisiert den Cloud-Sensor."""
         super().__init__(coordinator)
@@ -135,6 +148,7 @@ class NeoomCloudSensor(CoordinatorEntity, SensorEntity):
         self._name = name
         self._attr_native_unit_of_measurement = unit
         self._attr_icon = icon
+        self._data_path = data_path
         
         # Eindeutige ID ist entscheidend für Home Assistant, um die Entität wiederzuerkennen
         self._attr_unique_id = f"{coordinator.site_id}_{key}"
@@ -151,7 +165,8 @@ class NeoomCloudSensor(CoordinatorEntity, SensorEntity):
             return None
         
         # Holt den Wert aus dem vom Coordinator bereitgestellten Dictionary
-        return self.coordinator.data.get("site", {}).get(self._key)
+        # Entweder unter 'site' oder 'flow', je nach data_path
+        return self.coordinator.data.get(self._data_path, {}).get(self._key)
 
     @property
     def device_info(self) -> DeviceInfo:
