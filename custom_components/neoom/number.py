@@ -140,6 +140,14 @@ class NeoomLocalNumber(CoordinatorEntity, NumberEntity):
             self._attr_native_max_value = 20000
             self._attr_native_step = 100
             self._attr_mode = NumberMode.BOX
+        elif self._uom_raw in ["Wh", "kWh"]:
+            # Energiewerte in kWh für HA (wird von Wh in der API konvertiert)
+            self._attr_native_unit_of_measurement = "kWh"
+            self._attr_device_class = NumberDeviceClass.ENERGY
+            self._attr_native_min_value = 0
+            self._attr_native_max_value = 1000000
+            self._attr_native_step = 0.1
+            self._attr_mode = NumberMode.BOX
         else:
             # Fallback für unbekannte Einheiten (Standard: Eingabebox)
             self._attr_native_min_value = 0
@@ -159,7 +167,11 @@ class NeoomLocalNumber(CoordinatorEntity, NumberEntity):
         if data_point:
             val = data_point.get("value")
             if val is not None:
-                return float(val)
+                float_val = float(val)
+                # Konvertiere Wh der API in kWh für Home Assistant
+                if self._uom_raw == "Wh":
+                    return float_val / 1000.0
+                return float_val
         return None
 
     async def async_set_native_value(self, value: float) -> None:
@@ -167,8 +179,13 @@ class NeoomLocalNumber(CoordinatorEntity, NumberEntity):
         
         Sendet den neuen Wert via API an das BEAAM Gateway.
         """
-        LOGGER.info("Setze %s auf %s", self._key, value)
-        await self.coordinator.async_send_command(self._thing_id, self._key, value)
+        api_value = value
+        # Konvertiere die kWh aus HA zurück in Wh für die API
+        if self._uom_raw == "Wh":
+            api_value = value * 1000.0
+            
+        LOGGER.info("Setze %s auf %s", self._key, api_value)
+        await self.coordinator.async_send_command(self._thing_id, self._key, api_value)
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -212,5 +229,10 @@ class NeoomIngestNumber(NeoomLocalNumber):
         
         Sendet den neuen Wert via State-Ingest an das BEAAM Gateway.
         """
-        LOGGER.info("Sende State Ingest für %s auf %s", self._key, value)
-        await self.coordinator.async_ingest_state(self._thing_id, self._key, value)
+        api_value = value
+        # Konvertiere die kWh aus HA zurück in Wh für die API
+        if self._uom_raw == "Wh":
+            api_value = value * 1000.0
+            
+        LOGGER.info("Sende State Ingest für %s auf %s", self._key, api_value)
+        await self.coordinator.async_ingest_state(self._thing_id, self._key, api_value)
