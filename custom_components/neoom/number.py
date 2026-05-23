@@ -69,16 +69,28 @@ async def async_setup_entry(
                 key: str = dp_data.get("key", "")
                 
                 # Filtern von unerwünschten Schlüsseln
-                if dtype == "NUMBER" and controllable and key not in IGNORE_KEYS:
-                    entities.append(
-                        NeoomLocalNumber(
-                            coordinator=local_coordinator, 
-                            thing_id=thing_id, 
-                            thing_data=thing_data, 
-                            dp_id=dp_id, 
-                            dp_data=dp_data
+                if dtype == "NUMBER" and key not in IGNORE_KEYS:
+                    if controllable:
+                        entities.append(
+                            NeoomLocalNumber(
+                                coordinator=local_coordinator, 
+                                thing_id=thing_id, 
+                                thing_data=thing_data, 
+                                dp_id=dp_id, 
+                                dp_data=dp_data
+                            )
                         )
-                    )
+                    else:
+                        # Wenn nicht steuerbar, legen wir eine Ingest-Entität an (standardmäßig deaktiviert)
+                        entities.append(
+                            NeoomIngestNumber(
+                                coordinator=local_coordinator, 
+                                thing_id=thing_id, 
+                                thing_data=thing_data, 
+                                dp_id=dp_id, 
+                                dp_data=dp_data
+                            )
+                        )
 
     # Entitäten in Home Assistant registrieren
     async_add_entities(entities)
@@ -168,3 +180,37 @@ class NeoomLocalNumber(CoordinatorEntity, NumberEntity):
             model=self._thing_type,
             via_device=(DOMAIN, "BEAAM Gateway"),
         )
+
+class NeoomIngestNumber(NeoomLocalNumber):
+    """Repräsentation eines Ingest-Werts (Number Entity) für Sensordaten.
+    
+    Ermöglicht das Schreiben (Ingest) von Werten für nicht-steuerbare Datenpunkte
+    (z.B. für Generic Devices). Standardmäßig deaktiviert.
+    """
+
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(
+        self,
+        coordinator: NeoomLocalCoordinator,
+        thing_id: str,
+        thing_data: Dict[str, Any],
+        dp_id: str,
+        dp_data: Dict[str, Any],
+    ) -> None:
+        """Initialisiert die Ingest Number-Entität."""
+        super().__init__(coordinator, thing_id, thing_data, dp_id, dp_data)
+        
+        # Ändere die eindeutige ID, damit sie nicht mit dem normalen Sensor kollidiert
+        self._attr_unique_id = f"{thing_id}_{dp_id}_ingest"
+        
+        # Markiere den Namen als (Ingest), um ihn in der UI von normalen Werten zu unterscheiden
+        self._attr_name = f"{self._attr_name} (Ingest)"
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Wird aufgerufen, wenn der Benutzer einen neuen Wert eingibt.
+        
+        Sendet den neuen Wert via State-Ingest an das BEAAM Gateway.
+        """
+        LOGGER.info("Sende State Ingest für %s auf %s", self._key, value)
+        await self.coordinator.async_ingest_state(self._thing_id, self._key, value)
