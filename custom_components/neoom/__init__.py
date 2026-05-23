@@ -10,8 +10,10 @@ from typing import Dict, Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import device_registry as dr
+import homeassistant.helpers.config_validation as cv
+import voluptuous as vol
 
 from .const import (
     DOMAIN,
@@ -108,6 +110,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Weist Home Assistant an, die in PLATFORMS definierten Komponenten (Sensor, Number, Select)
     # asynchron für diesen Eintrag einzurichten.
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # --- SERVICE REGISTRIERUNG ---
+    async def handle_ingest_state(call: ServiceCall) -> None:
+        """Behandelt den Aufruf des ingest_state Dienstes."""
+        thing_id = call.data.get("thing_id")
+        key = call.data.get("key")
+        value = call.data.get("value")
+        
+        # Sende den Wert an alle konfigurierten BEAAM Gateways in dieser Home Assistant Instanz.
+        for entry_id, coordinators in hass.data.get(DOMAIN, {}).items():
+            loc_coord = coordinators.get("local")
+            if loc_coord:
+                try:
+                    await loc_coord.async_ingest_state(thing_id, key, value)
+                except Exception as err:
+                    LOGGER.error("Fehler beim Senden von State-Ingest für Eintrag %s: %s", entry_id, err)
+
+    if not hass.services.has_service(DOMAIN, "ingest_state"):
+        hass.services.async_register(
+            DOMAIN,
+            "ingest_state",
+            handle_ingest_state,
+            schema=vol.Schema({
+                vol.Required("thing_id"): cv.string,
+                vol.Required("key"): cv.string,
+                vol.Required("value"): vol.Any(cv.string, vol.Coerce(float)),
+            })
+        )
 
     LOGGER.info("neoom AI Einrichtung erfolgreich abgeschlossen.")
     return True

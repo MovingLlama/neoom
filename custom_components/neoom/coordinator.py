@@ -316,6 +316,44 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             LOGGER.error("Schwerwiegender Fehler beim Senden des Befehls an '%s': %s", thing_id, err)
             raise
 
+    async def async_ingest_state(self, thing_id: str, key: str, value: Any) -> None:
+        """Sendet (ingests) einen Sensorwert an ein generisches Gerät im BEAAM Gateway.
+        
+        Dies erlaubt es Home Assistant, als Datenquelle für das neoom System zu dienen.
+        Wird beispielsweise als Home Assistant Dienst aufgerufen.
+
+        Args:
+            thing_id: Die eindeutige ID des Zielgeräts (Generic Device).
+            key: Der Name (Key) des Datenpunkts (z.B. "CURRENT_P1").
+            value: Der zu übermittelnde Wert.
+            
+        Raises:
+            Exception: Wenn der HTTP-Aufruf nicht erfolgreich ist oder ein Timeout auftritt.
+        """
+        url = f"http://{self.ip}/api/v1/things/{thing_id}/states"
+        headers = {
+            "Authorization": f"Bearer {self.key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = [
+            {
+                "key": key,
+                "value": value
+            }
+        ]
+        
+        LOGGER.debug("Sende State-Ingest an lokales BEAAM Gerät '%s': '%s' = '%s'", thing_id, key, value)
+        
+        try:
+            async with async_timeout.timeout(10):
+                async with self.session.post(url, headers=headers, json=payload) as resp:
+                    resp.raise_for_status()
+                    LOGGER.info("State-Ingest an BEAAM erfolgreich gesendet: %s -> %s", key, value)
+        except Exception as err:
+            LOGGER.error("Schwerwiegender Fehler beim Senden des States an '%s': %s", thing_id, err)
+            raise
+
     async def close(self) -> None:
         """Schließt die aufrechterhaltene HTTP-Session."""
         await self.session.close()

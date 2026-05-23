@@ -1,0 +1,27 @@
+ingest_state:
+  name: "Ingest State"
+  description: >
+    Sendet einen Sensorwert (State) an ein Generic Device im neoom BEAAM Gateway.
+    Damit kann Home Assistant als Datenquelle für das neoom System dienen.
+  fields:
+    thing_id:
+      name: "Thing ID"
+      description: "Die eindeutige ID (UUID) des Generic Devices (z.B. Zähler, Wärmepumpe), an das der Wert gesendet werden soll."
+      required: true
+      example: "0c7bc039-50c1-4b01-93bd-76ca45d55bff"
+      selector:
+        text:
+    key:
+      name: "Datenpunkt Key"
+      description: "Der Schlüssel des Datenpunkts, der aktualisiert werden soll (z.B. CURRENT_P1, ACTIVE_POWER)."
+      required: true
+      example: "ACTIVE_POWER"
+      selector:
+        text:
+    value:
+      name: "Wert"
+      description: "Der numerische Wert oder Textwert, der gesendet werden soll."
+      required: true
+      example: 250.5
+      selector:
+        text:

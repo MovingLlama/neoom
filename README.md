@@ -20,12 +20,11 @@ Sie verbindet das Beste aus zwei Welten:
 
 ## 📋 Voraussetzungen
 
-Bevor Sie mit der Installation starten, benötigen Sie folgende vier Informationen aus Ihrem neoom/neoom AI-Konto bzw. von Ihrer Hardware:
+Bevor Sie mit der Installation starten, benötigen Sie folgende drei Informationen aus Ihrem neoom/neoom AI-Konto bzw. von Ihrer Hardware:
 
-1. **neoom AI Bearer Token:** Ihr API-Zugriffsschlüssel für die neoom AI Cloud.
-2. **Site ID:** Die eindeutige UUID Ihres Standorts (z. B. `b60bf800-...`).
-3. **BEAAM IP-Adresse:** Die lokale IP-Adresse Ihres BEAAM Gateways in Ihrem Heimnetzwerk (z. B. `192.168.1.50`).
-4. **BEAAM API Key:** Das lokale Passwort bzw. der Local-API-Key für den Zugriff auf das Gateway.
+1. **neoom AI Bearer Token:** Ihr API-Zugriffsschlüssel für die neoom AI Cloud. (Der Standort bzw. die Site ID wird automatisch über dieses Token abgefragt und kann im nächsten Schritt bequem aus einer Liste ausgewählt werden).
+2. **BEAAM IP-Adresse:** Die lokale IP-Adresse Ihres BEAAM Gateways in Ihrem Heimnetzwerk (z. B. `192.168.1.50`).
+3. **BEAAM API Key:** Das lokale Passwort bzw. der Local-API-Key für den Zugriff auf das Gateway.
 
 ## 🛠 Installation
 
