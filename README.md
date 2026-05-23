@@ -13,9 +13,12 @@ Sie verbindet das Beste aus zwei Welten:
 ## 🚀 Funktionen
 
 * **Echtzeit-Überwachung:** Liest Leistungs-, Energie- und Spannungsdaten blitzschnell direkt vom lokalen BEAAM Gateway im Netzwerk.
-* **Dynamische Hardware-Erkennung:** Findet automatisch Wechselrichter, Batterien (z. B. Kjuube), Ladestationen und Zähler, ohne dass Sie diese manuell konfigurieren müssen.
+* **Intelligente Namensgebung:** Erkennt automatisch die "Friendly Names" (z. B. "PV Süd", "Wärmepumpe") deiner Geräte aus der neoom Konfiguration, sodass sie in Home Assistant perfekt benannt sind.
+* **Dynamische Hardware-Erkennung:** Findet automatisch Wechselrichter, Batterien (z. B. Kjuube), Ladestationen und Zähler, ohne dass du diese manuell konfigurieren musst.
 * **Steuerung (Beta):** Unterstützung zum Setzen von Ladeleistungsgrenzen oder Betriebsmodi (z. B. 1-Phasig/3-Phasig Laden) direkt über Home Assistant-Entitäten (Slider und Dropdowns).
+* **Daten einspeisen (Generic Devices):** Du hast Zähler, die nicht von neoom stammen? Mit dem Dienst `neoom.ingest_state` kannst du Zählerdaten oder Sensorwerte aus Home Assistant direkt an das BEAAM Gateway schicken (für als "Generic" konfigurierte Geräte).
 * **Tarif-Informationen:** Integriert aktuelle Strompreise und Einspeisevergütungen aus der neoom AI Cloud.
+* **Einfache Einrichtung:** Bequeme Auswahl deines Standorts (Site) über ein Dropdown-Menü bei der Ersteinrichtung.
 * **Voll integriert:** Alle Sensoren sind mit den korrekten Home Assistant "Device Classes" und "State Classes" vorkonfiguriert, sodass sie nahtlos im nativen Energie-Dashboard (Energy Dashboard) verwendet werden können.
 
 ## 📋 Voraussetzungen
