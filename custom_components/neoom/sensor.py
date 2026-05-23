@@ -27,6 +27,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import NeoomCloudCoordinator, NeoomLocalCoordinator
+from .helpers import get_friendly_thing_name
 
 
 async def async_setup_entry(
@@ -186,11 +187,11 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
         self._key: str = dp_data.get("key", "")
         self._uom_raw: str = dp_data.get("unitOfMeasure", "")
 
-        # Mache den Namen benutzerfreundlich (z.B. BATT_INVERTER -> Batt Inverter)
-        friendly_thing_name = self._thing_type.replace("_", " ").title()
+        beaam_config = coordinator.data.get("config", {}) if coordinator.data else {}
+        self._friendly_thing_name = get_friendly_thing_name(beaam_config, thing_id, self._thing_type)
         friendly_dp_name = self._key.replace("_", " ").title()
         
-        self._attr_name = f"{friendly_thing_name} {friendly_dp_name}"
+        self._attr_name = f"{self._friendly_thing_name} {friendly_dp_name}"
         self._attr_unique_id = f"{thing_id}_{dp_id}"
 
         # Weise HA-spezifische Device Classes (Typ des Sensors, z.B. Leistung) 
@@ -245,7 +246,7 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
         """
         return DeviceInfo(
             identifiers={(DOMAIN, self._thing_id)},
-            name=f"neoom {self._thing_type}",
+            name=f"neoom {getattr(self, '_friendly_thing_name', self._thing_type)}",
             manufacturer="neoom",
             model=self._thing_type,
             via_device=(DOMAIN, "BEAAM Gateway"),

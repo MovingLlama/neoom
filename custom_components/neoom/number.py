@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, LOGGER
 from .coordinator import NeoomLocalCoordinator
+from .helpers import get_friendly_thing_name
 
 # Diese Schlüssel werden konsequent ignoriert, auch wenn die API sie als "controllable" (steuerbar) markiert.
 # Grund: Oft sind diese Werte kritisch für das Batteriemanagementsystem oder 
@@ -102,11 +103,11 @@ class NeoomLocalNumber(CoordinatorEntity, NumberEntity):
         self._key: str = dp_data.get("key", "")
         self._uom_raw: str = dp_data.get("unitOfMeasure", "")
         
-        # Mache den Namen benutzerfreundlich
-        friendly_thing_name = self._thing_type.replace("_", " ").title()
+        beaam_config = coordinator.data.get("config", {}) if coordinator.data else {}
+        self._friendly_thing_name = get_friendly_thing_name(beaam_config, thing_id, self._thing_type)
         friendly_dp_name = self._key.replace("_", " ").title()
         
-        self._attr_name = f"{friendly_thing_name} {friendly_dp_name}"
+        self._attr_name = f"{self._friendly_thing_name} {friendly_dp_name}"
         self._attr_unique_id = f"{thing_id}_{dp_id}_number"
 
         # Setze Einheiten, Device Class und Limits basierend auf der Einheit
@@ -162,7 +163,7 @@ class NeoomLocalNumber(CoordinatorEntity, NumberEntity):
         """Verknüpfung der Entität mit dem physischen Gerät (Thing) im Device Registry."""
         return DeviceInfo(
             identifiers={(DOMAIN, self._thing_id)},
-            name=f"neoom {self._thing_type}",
+            name=f"neoom {getattr(self, '_friendly_thing_name', self._thing_type)}",
             manufacturer="neoom",
             model=self._thing_type,
             via_device=(DOMAIN, "BEAAM Gateway"),
