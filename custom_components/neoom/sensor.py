@@ -19,6 +19,7 @@ from homeassistant.const import (
     UnitOfEnergy,
     UnitOfFrequency,
     UnitOfPower,
+    UnitOfTemperature,
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant, callback
@@ -299,12 +300,20 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
             return UnitOfElectricCurrent.AMPERE
         if unit_str == "Hz":
             return UnitOfFrequency.HERTZ
+
+        # Temperatur
+        if unit_str == "C":
+            return UnitOfTemperature.CELSIUS
+        if unit_str == "K":
+            return UnitOfTemperature.KELVIN
             
         # Sonstiges
         if unit_str == "%":
             return PERCENTAGE
         if unit_str == "s":
             return UnitOfTime.SECONDS
+        if unit_str == "h":
+            return UnitOfTime.HOURS
 
         # Fallback auf den rohen String, wenn unbekannt
         return unit_str
@@ -321,6 +330,12 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
             return SensorDeviceClass.VOLTAGE
         if unit == "A":
             return SensorDeviceClass.CURRENT
+        if unit == "Hz":
+            return SensorDeviceClass.FREQUENCY
+        if unit in ["C", "K", "°C", UnitOfTemperature.CELSIUS, UnitOfTemperature.KELVIN] or "TEMPERATURE" in key:
+            return SensorDeviceClass.TEMPERATURE
+        if unit in ["s", "h", UnitOfTime.SECONDS, UnitOfTime.HOURS] or "TIME" in key or "DURATION" in key:
+            return SensorDeviceClass.DURATION
         if unit == "%" and "SOC" in key:
             # SOC steht in der Branche für "State of Charge" (Batteriestand)
             return SensorDeviceClass.BATTERY

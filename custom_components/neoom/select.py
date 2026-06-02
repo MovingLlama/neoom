@@ -23,6 +23,7 @@ from .helpers import get_friendly_thing_name
 # Neue umschaltbare Parameter müssen hier ergänzt werden.
 KNOWN_OPTIONS: Dict[str, List[str]] = {
     "PHASE_SWITCHING_MODE": ["AUTO", "FORCE_1_PHASE", "FORCE_3_PHASE"],
+    "OPERATING_MODE_SG_READY": ["1", "2", "3", "4"],
 }
 
 
@@ -59,23 +60,35 @@ async def async_setup_entry(
                 if not dp_data:
                     continue
 
-                # Suche nach steuerbaren Text-Werten ("controllable": true, dataType: STRING)
+                # Suche nach Text-Werten (dataType: STRING) in KNOWN_OPTIONS
                 dtype: str = dp_data.get("dataType", "")
                 controllable: bool = dp_data.get("controllable", False)
                 key: str = dp_data.get("key", "")
                 
-                # Wir erstellen nur Select-Entitäten für Schlüssel, deren Optionen wir kennen
-                if dtype == "STRING" and controllable and key in KNOWN_OPTIONS:
-                    entities.append(
-                        NeoomLocalSelect(
-                            coordinator=local_coordinator, 
-                            thing_id=thing_id, 
-                            thing_data=thing_data, 
-                            dp_id=dp_id, 
-                            dp_data=dp_data,
-                            options=KNOWN_OPTIONS[key]
+                if dtype == "STRING" and key in KNOWN_OPTIONS:
+                    if controllable:
+                        entities.append(
+                            NeoomLocalSelect(
+                                coordinator=local_coordinator, 
+                                thing_id=thing_id, 
+                                thing_data=thing_data, 
+                                dp_id=dp_id, 
+                                dp_data=dp_data,
+                                options=KNOWN_OPTIONS[key]
+                            )
                         )
-                    )
+                    else:
+                        # Wenn nicht steuerbar (z.B. Generic Device), legen wir eine Ingest-Entität an (standardmäßig deaktiviert)
+                        entities.append(
+                            NeoomIngestSelect(
+                                coordinator=local_coordinator, 
+                                thing_id=thing_id, 
+                                thing_data=thing_data, 
+                                dp_id=dp_id, 
+                                dp_data=dp_data,
+                                options=KNOWN_OPTIONS[key]
+                            )
+                        )
 
     # Entitäten in Home Assistant registrieren
     async_add_entities(entities)
@@ -147,3 +160,36 @@ class NeoomLocalSelect(CoordinatorEntity, SelectEntity):
             model=self._thing_type,
             via_device=(DOMAIN, "BEAAM Gateway"),
         )
+
+
+class NeoomIngestSelect(NeoomLocalSelect):
+    """Repräsentation einer Ingest-Auswahl-Entität für nicht-steuerbare Text-Werte.
+    
+    Ermöglicht das Senden von vordefinierten Werten per State-Ingest an das BEAAM Gateway.
+    Standardmäßig deaktiviert.
+    """
+
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(
+        self,
+        coordinator: NeoomLocalCoordinator,
+        thing_id: str,
+        thing_data: Dict[str, Any],
+        dp_id: str,
+        dp_data: Dict[str, Any],
+        options: List[str],
+    ) -> None:
+        """Initialisiert die Ingest-Select-Entität."""
+        super().__init__(coordinator, thing_id, thing_data, dp_id, dp_data, options)
+        self._attr_unique_id = f"{thing_id}_{dp_id}_ingest_select"
+        self._attr_name = f"{self._attr_name} (Ingest)"
+
+    async def async_select_option(self, option: str) -> None:
+        """Wird aufgerufen, wenn der Benutzer einen Wert im Dropdown wählt.
+        
+        Sendet den Wert via State-Ingest an das BEAAM Gateway.
+        """
+        LOGGER.info("Sende State Ingest für %s auf %s", self._key, option)
+        await self.coordinator.async_ingest_state(self._thing_id, self._key, option)
+

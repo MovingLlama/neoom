@@ -13,7 +13,12 @@ from homeassistant.components.number import (
     NumberMode,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfPower
+from homeassistant.const import (
+    PERCENTAGE,
+    UnitOfElectricCurrent,
+    UnitOfPower,
+    UnitOfTemperature,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -147,6 +152,22 @@ class NeoomLocalNumber(CoordinatorEntity, NumberEntity):
             self._attr_native_min_value = 0
             self._attr_native_max_value = 1000000
             self._attr_native_step = 0.1
+            self._attr_mode = NumberMode.BOX
+        elif self._uom_raw == "A":
+            # Stromstärke (z.B. Ladestromgrenzen)
+            self._attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
+            self._attr_device_class = NumberDeviceClass.CURRENT
+            self._attr_native_min_value = 0
+            self._attr_native_max_value = 63
+            self._attr_native_step = 1
+            self._attr_mode = NumberMode.BOX
+        elif self._uom_raw in ["C", "°C"]:
+            # Temperaturwerte
+            self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+            self._attr_device_class = NumberDeviceClass.TEMPERATURE
+            self._attr_native_min_value = 0
+            self._attr_native_max_value = 100
+            self._attr_native_step = 0.5
             self._attr_mode = NumberMode.BOX
         else:
             # Fallback für unbekannte Einheiten (Standard: Eingabebox)
