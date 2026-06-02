@@ -344,8 +344,10 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
 
     def _map_state_class(self, key: str, unit: str) -> Optional[SensorStateClass]:
         """Bestimmt das Langzeit-Aufzeichnungsverhalten (Statistics) des Sensors in HA."""
-        # Energiemengen (produziert/verbraucht) steigen kontinuierlich an
-        if "ENERGY" in key or unit in ["Wh", "kWh", "MWh", "GWh"]:
+        # Energiemengen (produziert/verbraucht) steigen kontinuierlich an.
+        # Wir schließen Prozentwerte (%) und Leistungswerte (W/kW) explizit aus, um Konflikte
+        # mit Einstellungen wie MIN_SOC_BACKUP_ENERGY zu vermeiden.
+        if ("ENERGY" in key and unit not in ["%", "W", "kW", "MW", "GW"]) or unit in ["Wh", "kWh", "MWh", "GWh"]:
             return SensorStateClass.TOTAL_INCREASING
             
         # Wenn es sich um eine Zahl ohne Einheit (None) handelt oder einen Text-Status
