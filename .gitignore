@@ -6,3 +6,4 @@ custom_components/neoom/__pycache__/number.cpython-312.pyc
 custom_components/neoom/__pycache__/select.cpython-312.pyc
 custom_components/neoom/__pycache__/sensor.cpython-312.pyc
 .env
+create_brand.sh
