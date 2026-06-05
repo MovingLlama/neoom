@@ -160,7 +160,25 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                         raise ConfigEntryAuthFailed("Lokaler BEAAM API Key ist ungültig oder abgewiesen.")
                     
                     resp.raise_for_status()
-                    self.beaam_config = await resp.json()
+                    config = await resp.json()
+                    
+                    # Inject virtual OPERATING_MODE_SG_READY datapoint for HEAT_PUMP things if missing
+                    if config and "things" in config:
+                        for thing_id, thing_data in config["things"].items():
+                            if thing_data and thing_data.get("type") == "HEAT_PUMP":
+                                datapoints = thing_data.setdefault("dataPoints", {})
+                                sg_ready_exists = any(dp.get("key") == "OPERATING_MODE_SG_READY" for dp in datapoints.values())
+                                if not sg_ready_exists:
+                                    virtual_dp_id = f"{thing_id}_operating_mode_sg_ready"
+                                    datapoints[virtual_dp_id] = {
+                                        "key": "OPERATING_MODE_SG_READY",
+                                        "dataType": "STRING",
+                                        "unitOfMeasure": "None",
+                                        "controllable": True
+                                    }
+                                    LOGGER.warning("Injected virtual OPERATING_MODE_SG_READY for HEAT_PUMP: %s", thing_id)
+                    
+                    self.beaam_config = config
                     LOGGER.warning("BEAAM Konfiguration (Gerätestruktur) erfolgreich geladen: %s", self.beaam_config)
         except Exception as err:
             # Wird an die aufrufende Methode (_async_update_data) weitergereicht.
@@ -234,14 +252,16 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     if "energyFlow" in site_data and "states" in site_data["energyFlow"]:
                         for item in site_data["energyFlow"]["states"]:
                             state_map[item["dataPointId"]] = item
+                            state_map[f"energyFlow_{item['key']}"] = item
 
                 # 2. Detail-Status für einzelne Geräte ("Things") abrufen
                 # Wir sammeln alle API-Aufrufe als "Tasks" und starten sie dann gleichzeitig (parallel),
                 # anstatt darauf zu warten, dass jedes Gerät nacheinander antwortet.
                 if self.beaam_config and "things" in self.beaam_config:
                     tasks: List[asyncio.Task[Optional[Dict[str, Any]]]] = []
+                    thing_ids = list(self.beaam_config["things"].keys())
                     
-                    for thing_id in self.beaam_config["things"]:
+                    for thing_id in thing_ids:
                         # Erstellt ein asynchrones Task-Objekt
                         tasks.append(
                             asyncio.create_task(
@@ -255,10 +275,11 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                         results = await asyncio.gather(*tasks)
                         
                         # Verarbeite die Ergebnisse und mittle sie in die state_map ein
-                        for res in results:
+                        for thing_id, res in zip(thing_ids, results):
                             if res and "states" in res:
                                 for item in res["states"]:
                                     state_map[item["dataPointId"]] = item
+                                    state_map[f"{thing_id}_{item['key']}"] = item
 
                 # Returniere die fertige Datenstruktur für unsere Entitäts-Klassen
                 return {
@@ -350,6 +371,8 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 async with self.session.post(url, headers=headers, json=payload) as resp:
                     resp.raise_for_status()
                     LOGGER.info("State-Ingest an BEAAM erfolgreich gesendet: %s -> %s", key, value)
+                    # Trigger an immediate refresh so the updated state is read back and reflected in the UI
+                    await self.async_request_refresh()
         except Exception as err:
             LOGGER.error("Schwerwiegender Fehler beim Senden des States an '%s': %s", thing_id, err)
             raise

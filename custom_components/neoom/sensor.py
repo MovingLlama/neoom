@@ -237,7 +237,7 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
             return
 
         state_map: Dict[str, Any] = self.coordinator.data.get("states", {})
-        data_point: Optional[Dict[str, Any]] = state_map.get(self._dp_id)
+        data_point: Optional[Dict[str, Any]] = state_map.get(self._dp_id) or state_map.get(f"{self._thing_id}_{self._key}")
 
         if data_point:
             raw_value = data_point.get("value")
@@ -267,6 +267,15 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
             model=self._thing_type,
             via_device=(DOMAIN, "BEAAM Gateway"),
         )
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Gibt die Konfiguration des BEAAM für dieses Gerät/Thing zurück."""
+        # Gib die komplette Konfiguration dieses Datenpunkts als Attribute aus.
+        # Nützlich zum Debuggen und für Templates in Home Assistant.
+        return {
+            "all_config": self.coordinator.data.get("config", {}) if self.coordinator.data else {}
+        }
 
     def _map_unit(self, unit_str: str) -> Optional[str]:
         """Konvertiert die BEAAM String-Einheit in die offizielle Home Assistant Konstante."""

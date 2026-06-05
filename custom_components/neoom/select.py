@@ -131,7 +131,7 @@ class NeoomLocalSelect(CoordinatorEntity, SelectEntity):
             return None
         
         state_map: Dict[str, Any] = self.coordinator.data.get("states", {})
-        data_point: Optional[Dict[str, Any]] = state_map.get(self._dp_id)
+        data_point: Optional[Dict[str, Any]] = state_map.get(self._dp_id) or state_map.get(f"{self._thing_id}_{self._key}")
         
         if data_point:
             val = data_point.get("value")
