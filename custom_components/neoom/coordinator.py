@@ -161,7 +161,7 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     
                     resp.raise_for_status()
                     self.beaam_config = await resp.json()
-                    LOGGER.info("BEAAM Konfiguration (Gerätestruktur) erfolgreich geladen: %s", self.beaam_config)
+                    LOGGER.warning("BEAAM Konfiguration (Gerätestruktur) erfolgreich geladen: %s", self.beaam_config)
         except Exception as err:
             # Wird an die aufrufende Methode (_async_update_data) weitergereicht.
             raise UpdateFailed(f"Konnte BEAAM Konfiguration nicht laden: {err}") from err
