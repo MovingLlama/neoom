@@ -242,17 +242,22 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 
                 # 1. Globalen Site-Status abrufen
                 url_site = f"http://{self.ip}/api/v1/site/state"
-                async with self.session.get(url_site, headers=headers) as resp:
-                    if resp.status == 401:
-                        raise ConfigEntryAuthFailed("Lokaler BEAAM API Key ist ungültig.")
-                    resp.raise_for_status()
-                    site_data: Dict[str, Any] = await resp.json()
-                    
-                    # Extrahiere die übergeordneten Datenpunkte (Energy-Flow) aus der Antwort
-                    if "energyFlow" in site_data and "states" in site_data["energyFlow"]:
-                        for item in site_data["energyFlow"]["states"]:
-                            state_map[item["dataPointId"]] = item
-                            state_map[f"energyFlow_{item['key']}"] = item
+                try:
+                    async with self.session.get(url_site, headers=headers) as resp:
+                        if resp.status == 401:
+                            raise ConfigEntryAuthFailed("Lokaler BEAAM API Key ist ungültig.")
+                        resp.raise_for_status()
+                        site_data: Dict[str, Any] = await resp.json()
+                        
+                        # Extrahiere die übergeordneten Datenpunkte (Energy-Flow) aus der Antwort
+                        if "energyFlow" in site_data and "states" in site_data["energyFlow"]:
+                            for item in site_data["energyFlow"]["states"]:
+                                state_map[item["dataPointId"]] = item
+                                state_map[f"energyFlow_{item['key']}"] = item
+                except ConfigEntryAuthFailed:
+                    raise
+                except Exception as err:
+                    LOGGER.warning("Fehler beim Abrufen des globalen Site-Status (site/state): %s. Versuche dennoch, den Status der einzelnen Geräte abzurufen.", err)
 
                 # 2. Detail-Status für einzelne Geräte ("Things") abrufen
                 # Wir sammeln alle API-Aufrufe als "Tasks" und starten sie dann gleichzeitig (parallel),
