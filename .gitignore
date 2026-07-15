@@ -1,9 +1,26 @@
 custom_components/neoom/__pycache__/
-custom_components/neoom/__pycache__/config_flow.cpython-312.pyc
-custom_components/neoom/__pycache__/const.cpython-312.pyc
-custom_components/neoom/__pycache__/coordinator.cpython-312.pyc
-custom_components/neoom/__pycache__/number.cpython-312.pyc
-custom_components/neoom/__pycache__/select.cpython-312.pyc
-custom_components/neoom/__pycache__/sensor.cpython-312.pyc
+*.pyc
+__pycache__/
 .env
 create_brand.sh
+
+# Generated neoom data & config files
+neoom_cloud_data.json
+neoom_local_config.json
+neoom_local_settings.json
+neoom_local_states.json
+neoom_timing_test.txt
+Carport_data.json
+SolaX_data.json
+
+# IDE & Virtual Environments
+.vscode/
+.venv/
+venv/
+venv_neoom/
+dist/
+build/
+*.egg-info/
+gemini.md
+query_*.py
+test_api.py

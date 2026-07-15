@@ -504,6 +504,30 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     LOGGER.info("BEAAM Antwort erhalten (Status: %s): %s", resp.status, response_text)
                     resp.raise_for_status()
                     LOGGER.info("Einstellung an BEAAM erfolgreich gesendet: %s -> %s", key, api_value)
+                    
+                    # Update local settings cache immediately to avoid reverting in UI
+                    if self.data:
+                        if "settings" not in self.data:
+                            self.data["settings"] = {}
+                        if thing_id not in self.data["settings"]:
+                            self.data["settings"][thing_id] = {}
+                        self.data["settings"][thing_id][key] = api_value
+                        
+                        # Write local settings.json cache immediately as well
+                        try:
+                            import json
+                            filepath_settings = f"{self.hass.config.config_dir}/neoom_local_settings.json"
+                            with open(filepath_settings, "w") as f:
+                                json.dump(self.data["settings"], f, indent=2)
+                        except Exception as e:
+                            LOGGER.error("Failed to dump local settings after send: %s", e)
+
+                    # Trigger state update on the entity immediately to show new value in UI
+                    self.async_update_listeners()
+
+                    # Wait for 1.5 seconds to let the gateway apply the change internally,
+                    # then refresh coordinator data from the gateway.
+                    await asyncio.sleep(1.5)
                     await self.async_request_refresh()
         except Exception as err:
             LOGGER.error("Schwerwiegender Fehler beim Senden der Einstellung an '%s': %s", thing_id, err)
