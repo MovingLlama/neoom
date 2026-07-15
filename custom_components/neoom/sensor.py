@@ -170,6 +170,13 @@ class NeoomCloudSensor(CoordinatorEntity, SensorEntity):
         return self.coordinator.data.get(self._data_path, {}).get(self._key)
 
     @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Gibt zusätzliche Attribute für den Cloud-Sensor zurück."""
+        return {
+            "raw_data": self.coordinator.data if self.coordinator.data else {}
+        }
+
+    @property
     def device_info(self) -> DeviceInfo:
         """Gibt Informationen zum virtuellen Cloud-Gerät zurück.
         
@@ -274,7 +281,8 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
         # Gib die komplette Konfiguration dieses Datenpunkts als Attribute aus.
         # Nützlich zum Debuggen und für Templates in Home Assistant.
         return {
-            "all_config": self.coordinator.data.get("config", {}) if self.coordinator.data else {}
+            "all_config": self.coordinator.data.get("config", {}) if self.coordinator.data else {},
+            "raw_states": self.coordinator.data.get("states", {}) if self.coordinator.data else {}
         }
 
     def _map_unit(self, unit_str: str) -> Optional[str]:

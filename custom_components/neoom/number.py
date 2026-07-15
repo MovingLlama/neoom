@@ -97,6 +97,46 @@ async def async_setup_entry(
                             )
                         )
 
+
+        # 2. Einstellungen (Settings) dynamisch durchsuchen
+        settings_map: Dict[str, Dict[str, Any]] = (
+            local_coordinator.data.get("settings", {}) if local_coordinator.data else {}
+        )
+        
+        if settings_map:
+            for thing_id, thing_data in things.items():
+                if not thing_data:
+                    continue
+
+                thing_settings = settings_map.get(thing_id)
+                if not thing_settings:
+                    continue
+
+                for key, val in thing_settings.items():
+                    # Erkennt numerische Einstellungen
+                    is_num = False
+                    if "ENERGY" in key or "POWER" in key:
+                        is_num = True
+                    elif isinstance(val, (int, float)):
+                        is_num = True
+                    elif isinstance(val, str):
+                        try:
+                            float(val)
+                            if ":" not in val and ("." in val or val.isdigit()):
+                                is_num = True
+                        except ValueError:
+                            pass
+                    
+                    if is_num:
+                        entities.append(
+                            NeoomSettingNumber(
+                                coordinator=local_coordinator,
+                                thing_id=thing_id,
+                                thing_data=thing_data,
+                                setting_key=key,
+                            )
+                        )
+
     # Entitäten in Home Assistant registrieren
     async_add_entities(entities)
 
@@ -257,3 +297,84 @@ class NeoomIngestNumber(NeoomLocalNumber):
             
         LOGGER.info("Sende State Ingest für %s auf %s", self._key, api_value)
         await self.coordinator.async_ingest_state(self._thing_id, self._key, api_value)
+
+
+class NeoomSettingNumber(CoordinatorEntity, NumberEntity):
+    """Repräsentation einer Einstellungs-Zahleneingabe (Slider oder Box für Settings)."""
+
+    def __init__(
+        self,
+        coordinator: NeoomLocalCoordinator,
+        thing_id: str,
+        thing_data: Dict[str, Any],
+        setting_key: str,
+    ) -> None:
+        """Initialisiert die Einstellungs-Number-Entität."""
+        super().__init__(coordinator)
+        self._thing_id = thing_id
+        self._thing_type: str = thing_data.get("type", "Unknown")
+        self._setting_key = setting_key
+        
+        beaam_config = coordinator.data.get("config", {}) if coordinator.data else {}
+        self._friendly_thing_name = get_friendly_thing_name(beaam_config, thing_id, self._thing_type)
+        friendly_dp_name = setting_key.replace("_", " ").title()
+        
+        self._attr_name = f"{self._friendly_thing_name} {friendly_dp_name}"
+        self._attr_unique_id = f"{thing_id}_{setting_key}_number"
+        
+        # Spezifische Konfiguration für bekannte nummerische Einstellungen
+        if "ENERGY" in setting_key:
+            # Energiewerte in kWh für HA (wird von Wh in der API konvertiert)
+            self._attr_native_unit_of_measurement = "kWh"
+            self._attr_device_class = NumberDeviceClass.ENERGY
+            self._attr_native_min_value = 0
+            self._attr_native_max_value = 1000
+            self._attr_native_step = 0.1
+            self._attr_mode = NumberMode.BOX
+        else:
+            self._attr_native_min_value = 0
+            self._attr_native_max_value = 1000000
+            self._attr_native_step = 1
+            self._attr_mode = NumberMode.BOX
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Gibt den aktuellen Wert aus dem Koordinator zurück."""
+        if not self.coordinator.data:
+            return None
+        
+        settings_map = self.coordinator.data.get("settings", {})
+        thing_settings = settings_map.get(self._thing_id, {})
+        val = thing_settings.get(self._setting_key)
+        
+        if val is not None:
+            try:
+                float_val = float(val)
+                if "ENERGY" in self._setting_key:
+                    return float_val / 1000.0
+                return float_val
+            except ValueError:
+                pass
+        return None
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Wird aufgerufen, wenn der Benutzer einen neuen Wert in der HA-Oberfläche eingibt."""
+        api_value = value
+        if "ENERGY" in self._setting_key:
+            api_value = value * 1000.0
+            
+        LOGGER.info("Setze Einstellung %s am Gerät %s auf %s", self._setting_key, self._thing_id, api_value)
+        # Sende den neuen Einstellwert an das BEAAM Gateway.
+        # Die settings API akzeptiert oneOf string/number/boolean. Senden wir es als float/int.
+        await self.coordinator.async_send_setting(self._thing_id, self._setting_key, api_value)
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Verknüpfung der Entität mit dem physischen Gerät (Thing) im Device Registry."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._thing_id)},
+            name=f"neoom {getattr(self, '_friendly_thing_name', self._thing_type)}",
+            manufacturer="neoom",
+            model=self._thing_type,
+            via_device=(DOMAIN, "BEAAM Gateway"),
+        )

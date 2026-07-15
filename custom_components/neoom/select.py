@@ -26,6 +26,11 @@ KNOWN_OPTIONS: Dict[str, List[str]] = {
     "OPERATING_MODE_SG_READY": ["1", "2", "3", "4"],
 }
 
+# Bekannte Optionen für Einstellungen (Settings)
+KNOWN_SETTINGS_OPTIONS: Dict[str, List[str]] = {
+    "OPERATING_MODE_EMS": ["GRIID_CONTROLLED", "DEVICE_CONTROLLED"],
+}
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -87,6 +92,33 @@ async def async_setup_entry(
                                 dp_id=dp_id, 
                                 dp_data=dp_data,
                                 options=KNOWN_OPTIONS[key]
+                            )
+                        )
+
+
+        # 2. Einstellungen (Settings) dynamisch durchsuchen
+        settings_map: Dict[str, Dict[str, Any]] = (
+            local_coordinator.data.get("settings", {}) if local_coordinator.data else {}
+        )
+        
+        if settings_map:
+            for thing_id, thing_data in things.items():
+                if not thing_data:
+                    continue
+
+                thing_settings = settings_map.get(thing_id)
+                if not thing_settings:
+                    continue
+
+                for key, val in thing_settings.items():
+                    if key in KNOWN_SETTINGS_OPTIONS:
+                        entities.append(
+                            NeoomSettingSelect(
+                                coordinator=local_coordinator,
+                                thing_id=thing_id,
+                                thing_data=thing_data,
+                                setting_key=key,
+                                options=KNOWN_SETTINGS_OPTIONS[key],
                             )
                         )
 
@@ -193,3 +225,62 @@ class NeoomIngestSelect(NeoomLocalSelect):
         LOGGER.info("Sende State Ingest für %s auf %s", self._key, option)
         await self.coordinator.async_ingest_state(self._thing_id, self._key, option)
 
+
+class NeoomSettingSelect(CoordinatorEntity, SelectEntity):
+    """Repräsentation einer Einstellungs-Auswahl-Entität (Dropdown-Menü für Settings)."""
+
+    def __init__(
+        self,
+        coordinator: NeoomLocalCoordinator,
+        thing_id: str,
+        thing_data: Dict[str, Any],
+        setting_key: str,
+        options: List[str],
+    ) -> None:
+        """Initialisiert die Einstellungs-Select-Entität."""
+        super().__init__(coordinator)
+        self._thing_id = thing_id
+        self._thing_type: str = thing_data.get("type", "Unknown")
+        self._setting_key = setting_key
+        self._attr_options: List[str] = options
+        
+        beaam_config = coordinator.data.get("config", {}) if coordinator.data else {}
+        self._friendly_thing_name = get_friendly_thing_name(beaam_config, thing_id, self._thing_type)
+        friendly_dp_name = setting_key.replace("_", " ").title()
+        
+        self._attr_name = f"{self._friendly_thing_name} {friendly_dp_name}"
+        self._attr_unique_id = f"{thing_id}_{setting_key}_select"
+        self._attr_icon = "mdi:form-select"
+
+    @property
+    def current_option(self) -> Optional[str]:
+        """Gibt die aktuell im Gateway gesetzte Option zurück."""
+        if not self.coordinator.data:
+            return None
+        
+        settings_map = self.coordinator.data.get("settings", {})
+        thing_settings = settings_map.get(self._thing_id, {})
+        val = thing_settings.get(self._setting_key)
+        
+        if val is not None:
+            return str(val)
+        return None
+
+    async def async_select_option(self, option: str) -> None:
+        """Wird aufgerufen, wenn der Benutzer einen neuen Eintrag im Dropdown wählt.
+        
+        Sendet den neuen Einstellwert an das BEAAM Gateway.
+        """
+        LOGGER.info("Setze Einstellung %s am Gerät %s auf %s", self._setting_key, self._thing_id, option)
+        await self.coordinator.async_send_setting(self._thing_id, self._setting_key, option)
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Verknüpfung der Entität mit dem physischen Gerät (Thing) im Device Registry."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._thing_id)},
+            name=f"neoom {getattr(self, '_friendly_thing_name', self._thing_type)}",
+            manufacturer="neoom",
+            model=self._thing_type,
+            via_device=(DOMAIN, "BEAAM Gateway"),
+        )

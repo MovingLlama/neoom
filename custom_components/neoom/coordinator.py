@@ -88,6 +88,15 @@ class NeoomCloudCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     resp.raise_for_status()
                     flow_data: Dict[str, Any] = await resp.json()
 
+            # Write raw cloud data to a JSON file for analysis
+            try:
+                import json
+                filepath = f"{self.hass.config.config_dir}/neoom_cloud_data.json"
+                with open(filepath, "w") as f:
+                    json.dump({"site": site_data, "flow": flow_data}, f, indent=2)
+            except Exception as e:
+                LOGGER.error("Failed to dump cloud data: %s", e)
+
             # Wir bündeln beide API-Antworten in einem einzigen Dictionary,
             # das dann unseren Entitäten über `coordinator.data` zur Verfügung steht.
             return {
@@ -147,7 +156,7 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         Diese Methode ruft die API nur dann auf, wenn `self.beaam_config` noch leer (None) ist.
         """
         if self.beaam_config is not None:
-            return  # Konfiguration ist bereits geladen
+            return  # Konfiguration is bereits geladen
 
         url = f"http://{self.ip}/api/v1/site/configuration"
         headers = {"Authorization": f"Bearer {self.key}"}
@@ -180,6 +189,13 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     
                     self.beaam_config = config
                     LOGGER.warning("BEAAM Konfiguration (Gerätestruktur) erfolgreich geladen: %s", self.beaam_config)
+                    try:
+                        import json
+                        filepath = f"{self.hass.config.config_dir}/neoom_local_config.json"
+                        with open(filepath, "w") as f:
+                            json.dump(config, f, indent=2)
+                    except Exception as e:
+                        LOGGER.error("Failed to dump local config: %s", e)
         except Exception as err:
             # Wird an die aufrufende Methode (_async_update_data) weitergereicht.
             raise UpdateFailed(f"Konnte BEAAM Konfiguration nicht laden: {err}") from err
@@ -209,6 +225,27 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             LOGGER.debug("Konnte Status für Thing '%s' nicht abrufen: %s", thing_id, err)
         return None
 
+    async def _fetch_thing_settings(self, thing_id: str, headers: Dict[str, str]) -> Optional[Dict[str, Any]]:
+        """Hilfsfunktion: Ruft die Einstellungen eines einzelnen Geräts ('Thing') auf dem BEAAM ab.
+
+        Args:
+            thing_id: Die eindeutige ID des Geräts (aus der Konfiguration).
+            headers: Authorization-Header für die API.
+
+        Returns:
+            Das vom Gateway zurückgegebene Dictionary mit den Einstellungen,
+            oder None, wenn der Aufruf fehlschlägt.
+        """
+        url = f"http://{self.ip}/api/v1/things/{thing_id}/settings"
+        try:
+            async with async_timeout.timeout(5):
+                async with self.session.get(url, headers=headers) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+        except Exception as err:
+            LOGGER.debug("Konnte Einstellungen für Thing '%s' nicht abrufen: %s", thing_id, err)
+        return None
+
     async def _async_update_data(self) -> Dict[str, Any]:
         """Ruft die Echtzeit-Statusdaten vom BEAAM Gateway ab.
 
@@ -230,11 +267,12 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         await self._ensure_config_loaded()
 
         headers = {"Authorization": f"Bearer {self.key}"}
-        
+
         # In diesem Dictionary sammeln wir aggregiert alle Datenpunkte 
         # (egal ob sie von der Site-Übersicht oder von Detail-Abfragen stammen).
         # Key: dataPointId (die interne Sensor-ID), Value: Das komplette Objekt des Werts
         state_map: Dict[str, Any] = {}
+        settings_map: Dict[str, Dict[str, Any]] = {}
 
         try:
             # Gesamt-Timeout für den gesamten Refresh-Zyklus
@@ -259,37 +297,66 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 except Exception as err:
                     LOGGER.warning("Fehler beim Abrufen des globalen Site-Status (site/state): %s. Versuche dennoch, den Status der einzelnen Geräte abzurufen.", err)
 
-                # 2. Detail-Status für einzelne Geräte ("Things") abrufen
-                # Wir sammeln alle API-Aufrufe als "Tasks" und starten sie dann gleichzeitig (parallel),
-                # anstatt darauf zu warten, dass jedes Gerät nacheinander antwortet.
+                # 2. Detail-Status und Einstellungen für einzelne Geräte ("Things") abrufen
                 if self.beaam_config and "things" in self.beaam_config:
-                    tasks: List[asyncio.Task[Optional[Dict[str, Any]]]] = []
+                    tasks_states: List[asyncio.Task[Optional[Dict[str, Any]]]] = []
+                    tasks_settings: List[asyncio.Task[Optional[Dict[str, Any]]]] = []
                     thing_ids = list(self.beaam_config["things"].keys())
                     
                     for thing_id in thing_ids:
-                        # Erstellt ein asynchrones Task-Objekt
-                        tasks.append(
+                        tasks_states.append(
                             asyncio.create_task(
                                 self._fetch_thing_state(thing_id, headers)
                             )
                         )
+                        tasks_settings.append(
+                            asyncio.create_task(
+                                self._fetch_thing_settings(thing_id, headers)
+                            )
+                        )
                     
-                    if tasks:
-                        # asyncio.gather wartet, bis alle Tasks beendet sind.
-                        # Rückgabe ist eine Liste der Resultate jedes Tasks (Gleiche Reihenfolge wie in `tasks`).
-                        results = await asyncio.gather(*tasks)
+                    if thing_ids:
+                        # Warten auf alle Status- und Einstellungsabfragen parallel
+                        results_states = await asyncio.gather(*tasks_states)
+                        results_settings = await asyncio.gather(*tasks_settings)
                         
-                        # Verarbeite die Ergebnisse und mittle sie in die state_map ein
-                        for thing_id, res in zip(thing_ids, results):
+                        # Verarbeite die Ergebnisse der Statusabfragen
+                        for thing_id, res in zip(thing_ids, results_states):
                             if res and "states" in res:
                                 for item in res["states"]:
                                     state_map[item["dataPointId"]] = item
                                     state_map[f"{thing_id}_{item['key']}"] = item
+                        
+                        # Verarbeite die Ergebnisse der Einstellungsabfragen
+                        for thing_id, res in zip(thing_ids, results_settings):
+                            if res and "settings" in res:
+                                settings_map[thing_id] = {
+                                    s["key"]: s["value"] for s in res["settings"] if s.get("key")
+                                }
+
+                # Write raw local states to a JSON file for analysis
+                try:
+                    import json
+                    filepath = f"{self.hass.config.config_dir}/neoom_local_states.json"
+                    with open(filepath, "w") as f:
+                        json.dump(state_map, f, indent=2)
+                except Exception as e:
+                    LOGGER.error("Failed to dump local states: %s", e)
+
+                # Write raw settings to a JSON file for analysis
+                try:
+                    import json
+                    filepath_settings = f"{self.hass.config.config_dir}/neoom_local_settings.json"
+                    with open(filepath_settings, "w") as f:
+                        json.dump(settings_map, f, indent=2)
+                except Exception as e:
+                    LOGGER.error("Failed to dump local settings: %s", e)
 
                 # Returniere die fertige Datenstruktur für unsere Entitäts-Klassen
                 return {
                     "config": self.beaam_config,
-                    "states": state_map
+                    "states": state_map,
+                    "settings": settings_map
                 }
 
         except aiohttp.ClientError as err:
@@ -380,6 +447,43 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     await self.async_request_refresh()
         except Exception as err:
             LOGGER.error("Schwerwiegender Fehler beim Senden des States an '%s': %s", thing_id, err)
+            raise
+
+    async def async_send_setting(self, thing_id: str, key: str, value: Any) -> None:
+        """Sendet eine Einstellungsänderung an die BEAAM API (ändert z.B. eine Einstellung am Wechselrichter/Batterie).
+
+        Args:
+            thing_id: Die eindeutige ID des Zielgeräts.
+            key: Der Name (Key) der Einstellung, die geändert werden soll (z.B. "OPERATING_MODE_EMS").
+            value: Der neue Einstellwert.
+
+        Raises:
+            Exception: Wenn der HTTP-Aufruf fehlschlägt.
+        """
+        url = f"http://{self.ip}/api/v1/things/{thing_id}/settings"
+        headers = {
+            "Authorization": f"Bearer {self.key}",
+            "Content-Type": "application/json"
+        }
+        
+        # Die BEAAM API erwartet eine Liste von Einstellungen als JSON Array
+        payload = [
+            {
+                "key": key,
+                "value": value
+            }
+        ]
+        
+        LOGGER.debug("Sende Einstellung an lokales BEAAM Gerät '%s': '%s' = '%s'", thing_id, key, value)
+        
+        try:
+            async with async_timeout.timeout(10):
+                async with self.session.put(url, headers=headers, json=payload) as resp:
+                    resp.raise_for_status()
+                    LOGGER.info("Einstellung an BEAAM erfolgreich gesendet: %s -> %s", key, value)
+                    await self.async_request_refresh()
+        except Exception as err:
+            LOGGER.error("Schwerwiegender Fehler beim Senden der Einstellung an '%s': %s", thing_id, err)
             raise
 
     async def close(self) -> None:
