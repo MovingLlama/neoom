@@ -27,8 +27,8 @@ from .coordinator import NeoomCloudCoordinator, NeoomLocalCoordinator
 
 # Definiere die unterstützten Plattformen, die von dieser Integration geladen werden.
 # Wir unterstützen Sensoren (nur-lesen), Number-Entitäten (Zahleneingabe/Slider),
-# Select-Entitäten (Dropdown-Menüs) und Switch-Entitäten (Schalter).
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.NUMBER, Platform.SELECT, Platform.SWITCH]
+# Select-Entitäten (Dropdown-Menüs), Switch-Entitäten (Schalter) und Time-Entitäten (Uhrzeiten).
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.NUMBER, Platform.SELECT, Platform.SWITCH, Platform.TIME]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

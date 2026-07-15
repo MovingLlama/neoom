@@ -28,7 +28,17 @@ KNOWN_OPTIONS: Dict[str, List[str]] = {
 
 # Bekannte Optionen für Einstellungen (Settings)
 KNOWN_SETTINGS_OPTIONS: Dict[str, List[str]] = {
-    "OPERATING_MODE_EMS": ["GRIID_CONTROLLED", "DEVICE_CONTROLLED"],
+    "OPERATING_MODE_EMS": ["Intelligent", "Solar"],
+}
+
+# Übersetzungen für Einstellungswerte zwischen API und Home Assistant
+VALUE_TRANSLATIONS: Dict[str, Dict[str, str]] = {
+    "OPERATING_MODE_EMS": {
+        "GRIID_CONTROLLED": "Intelligent",
+        "DEVICE_CONTROLLED": "Solar",
+        "Intelligent": "GRIID_CONTROLLED",
+        "Solar": "DEVICE_CONTROLLED",
+    }
 }
 
 
@@ -263,7 +273,9 @@ class NeoomSettingSelect(CoordinatorEntity, SelectEntity):
         val = thing_settings.get(self._setting_key)
         
         if val is not None:
-            return str(val)
+            val_str = str(val)
+            translations = VALUE_TRANSLATIONS.get(self._setting_key, {})
+            return translations.get(val_str, val_str)
         return None
 
     async def async_select_option(self, option: str) -> None:
@@ -271,8 +283,11 @@ class NeoomSettingSelect(CoordinatorEntity, SelectEntity):
         
         Sendet den neuen Einstellwert an das BEAAM Gateway.
         """
-        LOGGER.info("Setze Einstellung %s am Gerät %s auf %s", self._setting_key, self._thing_id, option)
-        await self.coordinator.async_send_setting(self._thing_id, self._setting_key, option)
+        translations = VALUE_TRANSLATIONS.get(self._setting_key, {})
+        api_value = translations.get(option, option)
+        
+        LOGGER.info("Setze Einstellung %s am Gerät %s auf %s (API: %s)", self._setting_key, self._thing_id, option, api_value)
+        await self.coordinator.async_send_setting(self._thing_id, self._setting_key, api_value)
 
     @property
     def device_info(self) -> DeviceInfo:

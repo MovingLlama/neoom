@@ -21,6 +21,18 @@ Sie verbindet das Beste aus zwei Welten:
 * **Einfache Einrichtung:** Bequeme Auswahl deines Standorts (Site) über ein Dropdown-Menü bei der Ersteinrichtung.
 * **Voll integriert:** Alle Sensoren sind mit den korrekten Home Assistant "Device Classes" und "State Classes" vorkonfiguriert, sodass sie nahtlos im nativen Energie-Dashboard (Energy Dashboard) verwendet werden können.
 
+## 💡 Intelligentes Laden & Betriebsmodi (Settings)
+
+Über das lokale BEAAM-Gateway können verschiedene Ladestrategien und Einstellungen für deine Geräte (wie Batterie und Ladestation) verwaltet werden:
+
+*   **Betriebsmodus EMS (`OPERATING_MODE_EMS`):**
+    *   **Intelligent (`GRIID_CONTROLLED`):** Dieser Modus nutzt die **neoom CONNECT Ai** Optimierung. Das System bezieht dynamische Stromtarife (z. B. stündlich variable Strompreise), Wetterprognosen sowie den Hausverbrauch ein, um den Ladevorgang kosten- und netzschonend in die günstigsten Stunden zu verschieben.
+    *   **Solar (`DEVICE_CONTROLLED`):** Lädt die Batterie oder das Elektrofahrzeug rein basierend auf dem solaren Überschuss der eigenen PV-Anlage, um den Eigenverbrauch zu maximieren.
+*   **Lademenge (`GRIID_CHARGING_ENERGY`):** Legt fest, wie viel Energie (in kWh) im intelligenten Modus geladen werden soll.
+*   **Abfahrtszeit (`GRIID_EV_DEPARTURE_TIME`):** Bestimmt den Zielzeitpunkt, zu dem der Ladevorgang abgeschlossen sein muss (wird als native Time-Entität in Home Assistant bereitgestellt).
+
+Weiterführende Informationen und Hilfe zur Einrichtung dynamischer Tarife findest du im [neoom GRIID-Artikel in der neoom Wissensdatenbank](https://wissen.neoom.com).
+
 ## 📋 Voraussetzungen
 
 Bevor Sie mit der Installation starten, benötigen Sie folgende drei Informationen aus Ihrem neoom/neoom AI-Konto bzw. von Ihrer Hardware:
