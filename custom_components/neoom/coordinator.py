@@ -466,21 +466,44 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             "Content-Type": "application/json"
         }
         
+        # Normalisiere den Wert für die API (BEAAM Gateway erwartet Strings für Einstellwerte)
+        api_value = value
+        if isinstance(value, bool):
+            api_value = "true" if value else "false"
+        elif isinstance(value, (int, float)):
+            # Ganze Zahlen als int-String senden, da Nachkommastellen (z.B. .0)
+            # vom Gateway-Parser oft abgelehnt werden.
+            if value == int(value):
+                api_value = str(int(value))
+            else:
+                api_value = str(value)
+        elif isinstance(value, str):
+            if value.lower() == "true":
+                api_value = "true"
+            elif value.lower() == "false":
+                api_value = "false"
+            else:
+                api_value = value
+        else:
+            api_value = str(value)
+
         # Die BEAAM API erwartet eine Liste von Einstellungen als JSON Array
         payload = [
             {
                 "key": key,
-                "value": value
+                "value": api_value
             }
         ]
         
-        LOGGER.debug("Sende Einstellung an lokales BEAAM Gerät '%s': '%s' = '%s'", thing_id, key, value)
+        LOGGER.info("Sende Einstellung an lokales BEAAM Gerät '%s': '%s' = '%s' (Roh: %s)", thing_id, key, api_value, value)
         
         try:
             async with async_timeout.timeout(10):
                 async with self.session.put(url, headers=headers, json=payload) as resp:
+                    response_text = await resp.text()
+                    LOGGER.info("BEAAM Antwort erhalten (Status: %s): %s", resp.status, response_text)
                     resp.raise_for_status()
-                    LOGGER.info("Einstellung an BEAAM erfolgreich gesendet: %s -> %s", key, value)
+                    LOGGER.info("Einstellung an BEAAM erfolgreich gesendet: %s -> %s", key, api_value)
                     await self.async_request_refresh()
         except Exception as err:
             LOGGER.error("Schwerwiegender Fehler beim Senden der Einstellung an '%s': %s", thing_id, err)
