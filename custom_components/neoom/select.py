@@ -28,7 +28,7 @@ KNOWN_OPTIONS: Dict[str, List[str]] = {
 
 # Bekannte Optionen für Einstellungen (Settings)
 KNOWN_SETTINGS_OPTIONS: Dict[str, List[str]] = {
-    "OPERATING_MODE_EMS": ["Intelligent", "Solar", "Schnell"],
+    "OPERATING_MODE_EMS": ["Intelligent", "Solar", "Schnell", "Ausgenommen"],
 }
 
 # Übersetzungen für Einstellungswerte zwischen API und Home Assistant
@@ -36,12 +36,13 @@ VALUE_TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "OPERATING_MODE_EMS": {
         "GRIID_CONTROLLED": "Intelligent",
         "GRID_CONTROLLED": "Intelligent",
-        "DEVICE_CONTROLLED": "Solar",
+        "DEVICE_CONTROLLED": "Ausgenommen",
         "EXCESS_CONSUMPTION": "Solar",
         "FAST_CHARGING": "Schnell",
         "Intelligent": "GRIID_CONTROLLED",
         "Solar": "EXCESS_CONSUMPTION",
         "Schnell": "FAST_CHARGING",
+        "Ausgenommen": "DEVICE_CONTROLLED",
     }
 }
 
@@ -132,7 +133,7 @@ async def async_setup_entry(
                             if thing_type == "BATTERY":
                                 options = ["Intelligent", "Solar"]
                             elif thing_type == "CHARGING_POINT_AC":
-                                options = ["Intelligent", "Solar", "Schnell"]
+                                options = ["Intelligent", "Solar", "Schnell", "Ausgenommen"]
                         entities.append(
                             NeoomSettingSelect(
                                 coordinator=local_coordinator,
