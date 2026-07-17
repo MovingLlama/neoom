@@ -4,5 +4,11 @@
   "content_in_root": false,
   "filename": "neoom.zip",
   "homeassistant": "2024.1.0",
-  "country": "AT"
+  "country": [
+    "AT",
+    "DE",
+    "CH",
+    "IT",
+    "CZ"
+  ]
 }
