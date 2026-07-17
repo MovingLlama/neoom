@@ -22,7 +22,7 @@ from .helpers import get_friendly_thing_name
 # mitliefert, müssen wir diese hier ("hardcoded") definieren. 
 # Neue umschaltbare Parameter müssen hier ergänzt werden.
 KNOWN_OPTIONS: Dict[str, List[str]] = {
-    "PHASE_SWITCHING_MODE": ["AUTOMATIC", "FORCE_1_PHASE", "FORCE_3_PHASE"],
+    "PHASE_SWITCHING_MODE": ["automatic", "force_1_phase", "force_3_phase"],
     "OPERATING_MODE_SG_READY": ["1", "2", "3", "4"],
 }
 
@@ -179,6 +179,10 @@ class NeoomLocalSelect(CoordinatorEntity, SelectEntity):
             # Überprüfe, ob der Empfangene Wert in unserer Optionen-Liste ist.
             # Aber auch wenn nicht, geben wir ihn zurück, um Inkonsistenzen zu signalisieren.
             if val is not None:
+                val_str = str(val).lower()
+                for opt in self._attr_options:
+                    if opt.lower() == val_str:
+                        return opt
                 return str(val)
         return None
 
@@ -187,8 +191,9 @@ class NeoomLocalSelect(CoordinatorEntity, SelectEntity):
         
         Sendet den neuen Text-Wert via API an das BEAAM Gateway.
         """
-        LOGGER.info("Setze %s auf %s", self._key, option)
-        await self.coordinator.async_send_command(self._thing_id, self._key, option)
+        api_value = option.upper()
+        LOGGER.info("Setze %s auf %s (API: %s)", self._key, option, api_value)
+        await self.coordinator.async_send_command(self._thing_id, self._key, api_value)
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -230,8 +235,9 @@ class NeoomIngestSelect(NeoomLocalSelect):
         
         Sendet den Wert via State-Ingest an das BEAAM Gateway.
         """
-        LOGGER.info("Sende State Ingest für %s auf %s", self._key, option)
-        await self.coordinator.async_ingest_state(self._thing_id, self._key, option)
+        api_value = option.upper()
+        LOGGER.info("Sende State Ingest für %s auf %s (API: %s)", self._key, option, api_value)
+        await self.coordinator.async_ingest_state(self._thing_id, self._key, api_value)
 
 
 class NeoomSettingSelect(CoordinatorEntity, SelectEntity):

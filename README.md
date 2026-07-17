@@ -1,6 +1,6 @@
 # neoom AI for Home Assistant
 
-<img src="https://neoom.com/hubfs/01_neoom%20Website%20neu/Icons/Icon_Systemicons/neoom_round_c.svg" width="60" height="60" align="center" alt="neoom Logo">
+<img src="icon.png" width="60" height="60" align="center" alt="neoom Logo">
 
 [English](#english) | [Deutsch](#deutsch)
 
