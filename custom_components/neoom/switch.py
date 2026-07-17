@@ -18,8 +18,8 @@ from .helpers import get_friendly_thing_name
 
 # Bekannte boolesche Einstellungen und deren freundliche Bezeichnungen
 BOOLEAN_SETTINGS = {
-    "BATTERY_CHARGE_FROM_GRID_ALLOWED": "Batterieladung aus dem Netz erlauben",
-    "BATTERY_DISCHARGE_TO_GRID_ALLOWED": "Batterieentladung ins Netz erlauben",
+    "BATTERY_CHARGE_FROM_GRID_ALLOWED": "Allow battery charging from grid",
+    "BATTERY_DISCHARGE_TO_GRID_ALLOWED": "Allow battery discharging to grid",
 }
 
 
@@ -78,6 +78,8 @@ async def async_setup_entry(
 class NeoomSettingSwitch(CoordinatorEntity, SwitchEntity):
     """Repräsentation eines steuerbaren Einstellungs-Schalters."""
 
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         coordinator: NeoomLocalCoordinator,
@@ -94,8 +96,7 @@ class NeoomSettingSwitch(CoordinatorEntity, SwitchEntity):
         beaam_config = coordinator.data.get("config", {}) if coordinator.data else {}
         self._friendly_thing_name = get_friendly_thing_name(beaam_config, thing_id, self._thing_type)
         
-        friendly_dp_name = BOOLEAN_SETTINGS.get(setting_key, setting_key.replace("_", " ").title())
-        self._attr_name = f"{self._friendly_thing_name} {friendly_dp_name}"
+        self._attr_translation_key = setting_key.lower()
         self._attr_unique_id = f"{thing_id}_{setting_key}_switch"
         self._attr_icon = "mdi:toggle-switch"
 

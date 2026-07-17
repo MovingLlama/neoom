@@ -2,61 +2,61 @@
   "config": {
     "step": {
       "user": {
-        "title": "neoom AI Setup",
-        "description": "Please enter your neoom AI and BEAAM details.",
+        "title": "neoom AI Einrichtung",
+        "description": "Bitte gib deine neoom AI und BEAAM Daten ein.",
         "data": {
           "cloud_token": "neoom AI Bearer Token",
-          "beaam_ip": "Local IP of BEAAM (e.g. 192.168.1.50)",
+          "beaam_ip": "Lokale IP des BEAAM (z.B. 192.168.1.50)",
           "beaam_key": "BEAAM API Key"
         }
       },
       "site_selection": {
-        "title": "Select Site",
-        "description": "Select the site you want to integrate into Home Assistant.",
+        "title": "Standort auswählen",
+        "description": "Wähle den Standort aus, den du in Home Assistant integrieren möchtest.",
         "data": {
-          "site_id": "Site"
+          "site_id": "Standort (Site)"
         }
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect",
-      "invalid_auth": "Invalid authentication"
+      "cannot_connect": "Verbindung fehlgeschlagen",
+      "invalid_auth": "Ungültige Zugangsdaten"
     }
   },
   "entity": {
     "sensor": {
       "electricity_price": {
-        "name": "Electricity price"
+        "name": "Strompreis"
       },
       "feed_in_tariff": {
-        "name": "Feed-in tariff"
+        "name": "Einspeisetarif"
       },
       "gateways_online_state": {
-        "name": "Gateway status"
+        "name": "Gateway-Status"
       }
     },
     "switch": {
       "battery_charge_from_grid_allowed": {
-        "name": "Allow battery charging from grid"
+        "name": "Batterieladung aus dem Netz erlauben"
       },
       "battery_discharge_to_grid_allowed": {
-        "name": "Allow battery discharging to grid"
+        "name": "Batterieentladung ins Netz erlauben"
       }
     },
     "time": {
       "griid_ev_departure_time": {
-        "name": "Departure time"
+        "name": "Abfahrtszeit"
       }
     },
     "select": {
       "operating_mode_ems": {
-        "name": "EMS operating mode",
+        "name": "EMS-Betriebsmodus",
         "state": {
           "griid_controlled": "Intelligent",
           "grid_controlled": "Intelligent",
-          "device_controlled": "Excluded",
+          "device_controlled": "Ausgenommen",
           "excess_consumption": "Solar",
-          "fast_charging": "Fast"
+          "fast_charging": "Schnell"
         }
       }
     }

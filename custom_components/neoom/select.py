@@ -28,22 +28,7 @@ KNOWN_OPTIONS: Dict[str, List[str]] = {
 
 # Bekannte Optionen für Einstellungen (Settings)
 KNOWN_SETTINGS_OPTIONS: Dict[str, List[str]] = {
-    "OPERATING_MODE_EMS": ["Intelligent", "Solar", "Schnell", "Ausgenommen"],
-}
-
-# Übersetzungen für Einstellungswerte zwischen API und Home Assistant
-VALUE_TRANSLATIONS: Dict[str, Dict[str, str]] = {
-    "OPERATING_MODE_EMS": {
-        "GRIID_CONTROLLED": "Intelligent",
-        "GRID_CONTROLLED": "Intelligent",
-        "DEVICE_CONTROLLED": "Ausgenommen",
-        "EXCESS_CONSUMPTION": "Solar",
-        "FAST_CHARGING": "Schnell",
-        "Intelligent": "GRIID_CONTROLLED",
-        "Solar": "EXCESS_CONSUMPTION",
-        "Schnell": "FAST_CHARGING",
-        "Ausgenommen": "DEVICE_CONTROLLED",
-    }
+    "OPERATING_MODE_EMS": ["GRIID_CONTROLLED", "EXCESS_CONSUMPTION", "FAST_CHARGING", "DEVICE_CONTROLLED"],
 }
 
 
@@ -131,9 +116,9 @@ async def async_setup_entry(
                         options = KNOWN_SETTINGS_OPTIONS[key]
                         if key == "OPERATING_MODE_EMS":
                             if thing_type == "BATTERY":
-                                options = ["Intelligent", "Solar"]
+                                options = ["GRIID_CONTROLLED", "EXCESS_CONSUMPTION"]
                             elif thing_type == "CHARGING_POINT_AC":
-                                options = ["Intelligent", "Solar", "Schnell", "Ausgenommen"]
+                                options = ["GRIID_CONTROLLED", "EXCESS_CONSUMPTION", "FAST_CHARGING", "DEVICE_CONTROLLED"]
                         entities.append(
                             NeoomSettingSelect(
                                 coordinator=local_coordinator,
@@ -251,6 +236,8 @@ class NeoomIngestSelect(NeoomLocalSelect):
 class NeoomSettingSelect(CoordinatorEntity, SelectEntity):
     """Repräsentation einer Einstellungs-Auswahl-Entität (Dropdown-Menü für Settings)."""
 
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         coordinator: NeoomLocalCoordinator,
@@ -268,9 +255,8 @@ class NeoomSettingSelect(CoordinatorEntity, SelectEntity):
         
         beaam_config = coordinator.data.get("config", {}) if coordinator.data else {}
         self._friendly_thing_name = get_friendly_thing_name(beaam_config, thing_id, self._thing_type)
-        friendly_dp_name = setting_key.replace("_", " ").title()
         
-        self._attr_name = f"{self._friendly_thing_name} {friendly_dp_name}"
+        self._attr_translation_key = setting_key.lower()
         self._attr_unique_id = f"{thing_id}_{setting_key}_select"
         self._attr_icon = "mdi:form-select"
 
@@ -286,8 +272,10 @@ class NeoomSettingSelect(CoordinatorEntity, SelectEntity):
         
         if val is not None:
             val_str = str(val)
-            translations = VALUE_TRANSLATIONS.get(self._setting_key, {})
-            return translations.get(val_str, val_str)
+            # Map grid_controlled/griid_controlled fallback if necessary
+            if val_str == "GRID_CONTROLLED" and "GRIID_CONTROLLED" in self._attr_options:
+                return "GRIID_CONTROLLED"
+            return val_str
         return None
 
     async def async_select_option(self, option: str) -> None:
@@ -295,11 +283,8 @@ class NeoomSettingSelect(CoordinatorEntity, SelectEntity):
         
         Sendet den neuen Einstellwert an das BEAAM Gateway.
         """
-        translations = VALUE_TRANSLATIONS.get(self._setting_key, {})
-        api_value = translations.get(option, option)
-        
-        LOGGER.info("Setze Einstellung %s am Gerät %s auf %s (API: %s)", self._setting_key, self._thing_id, option, api_value)
-        await self.coordinator.async_send_setting(self._thing_id, self._setting_key, api_value)
+        LOGGER.info("Setze Einstellwert %s am Gerät %s auf %s", self._setting_key, self._thing_id, option)
+        await self.coordinator.async_send_setting(self._thing_id, self._setting_key, option)
 
     @property
     def device_info(self) -> DeviceInfo:

@@ -21,7 +21,7 @@ from .helpers import get_friendly_thing_name
 
 # Bekannte Uhrzeit-Einstellungen
 TIME_SETTINGS = {
-    "GRIID_EV_DEPARTURE_TIME": "Abfahrtszeit",
+    "GRIID_EV_DEPARTURE_TIME": "Departure time",
 }
 
 
@@ -80,6 +80,8 @@ async def async_setup_entry(
 class NeoomSettingTime(CoordinatorEntity, TimeEntity):
     """Repräsentation einer steuerbaren Einstellungs-Uhrzeit (Time Entity)."""
 
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         coordinator: NeoomLocalCoordinator,
@@ -96,8 +98,7 @@ class NeoomSettingTime(CoordinatorEntity, TimeEntity):
         beaam_config = coordinator.data.get("config", {}) if coordinator.data else {}
         self._friendly_thing_name = get_friendly_thing_name(beaam_config, thing_id, self._thing_type)
         
-        friendly_dp_name = TIME_SETTINGS.get(setting_key, setting_key.replace("_", " ").title())
-        self._attr_name = f"{self._friendly_thing_name} {friendly_dp_name}"
+        self._attr_translation_key = setting_key.lower()
         self._attr_unique_id = f"{thing_id}_{setting_key}_time"
         self._attr_icon = "mdi:clock-outline"
 

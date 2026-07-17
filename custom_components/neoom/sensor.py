@@ -134,6 +134,8 @@ class NeoomCloudSensor(CoordinatorEntity, SensorEntity):
     wenn der Koordinator neue Daten aus dem Internet lädt.
     """
 
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         coordinator: NeoomCloudCoordinator,
@@ -150,14 +152,10 @@ class NeoomCloudSensor(CoordinatorEntity, SensorEntity):
         self._attr_native_unit_of_measurement = unit
         self._attr_icon = icon
         self._data_path = data_path
+        self._attr_translation_key = key
         
         # Eindeutige ID ist entscheidend für Home Assistant, um die Entität wiederzuerkennen
         self._attr_unique_id = f"{coordinator.site_id}_{key}"
-
-    @property
-    def name(self) -> str:
-        """Gibt den Anzeigenamen des Sensors zurück."""
-        return f"neoom Cloud {self._name}"
 
     @property
     def native_value(self) -> Any:
