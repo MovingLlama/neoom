@@ -28,7 +28,7 @@ KNOWN_OPTIONS: Dict[str, List[str]] = {
 
 # Bekannte Optionen für Einstellungen (Settings)
 KNOWN_SETTINGS_OPTIONS: Dict[str, List[str]] = {
-    "OPERATING_MODE_EMS": ["GRIID_CONTROLLED", "EXCESS_CONSUMPTION", "FAST_CHARGING", "DEVICE_CONTROLLED"],
+    "OPERATING_MODE_EMS": ["griid_controlled", "excess_consumption", "fast_charging", "device_controlled"],
 }
 
 
@@ -116,9 +116,9 @@ async def async_setup_entry(
                         options = KNOWN_SETTINGS_OPTIONS[key]
                         if key == "OPERATING_MODE_EMS":
                             if thing_type == "BATTERY":
-                                options = ["GRIID_CONTROLLED", "EXCESS_CONSUMPTION"]
+                                options = ["griid_controlled", "excess_consumption"]
                             elif thing_type == "CHARGING_POINT_AC":
-                                options = ["GRIID_CONTROLLED", "EXCESS_CONSUMPTION", "FAST_CHARGING", "DEVICE_CONTROLLED"]
+                                options = ["griid_controlled", "excess_consumption", "fast_charging", "device_controlled"]
                         entities.append(
                             NeoomSettingSelect(
                                 coordinator=local_coordinator,
@@ -273,10 +273,10 @@ class NeoomSettingSelect(CoordinatorEntity, SelectEntity):
         val = thing_settings.get(self._setting_key)
         
         if val is not None:
-            val_str = str(val)
+            val_str = str(val).lower()
             # Map grid_controlled/griid_controlled fallback if necessary
-            if val_str == "GRID_CONTROLLED" and "GRIID_CONTROLLED" in self._attr_options:
-                return "GRIID_CONTROLLED"
+            if val_str == "grid_controlled" and "griid_controlled" in self._attr_options:
+                return "griid_controlled"
             return val_str
         return None
 
@@ -285,8 +285,9 @@ class NeoomSettingSelect(CoordinatorEntity, SelectEntity):
         
         Sendet den neuen Einstellwert an das BEAAM Gateway.
         """
-        LOGGER.info("Setze Einstellwert %s am Gerät %s auf %s", self._setting_key, self._thing_id, option)
-        await self.coordinator.async_send_setting(self._thing_id, self._setting_key, option)
+        api_value = option.upper()
+        LOGGER.info("Setze Einstellwert %s am Gerät %s auf %s (API: %s)", self._setting_key, self._thing_id, option, api_value)
+        await self.coordinator.async_send_setting(self._thing_id, self._setting_key, api_value)
 
     @property
     def device_info(self) -> DeviceInfo:
