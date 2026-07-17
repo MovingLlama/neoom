@@ -24,6 +24,13 @@ jobs:
           echo "VERSION=v$VERSION" >> $GITHUB_ENV
           echo "CLEAN_VERSION=$VERSION" >> $GITHUB_ENV
           echo "Version found: $VERSION"
+          if [[ "$VERSION" == *"beta"* || "$VERSION" == *"alpha"* || "$VERSION" == *"rc"* ]]; then
+            echo "IS_PRERELEASE=true" >> $GITHUB_ENV
+            echo "Prerelease detected: true"
+          else
+            echo "IS_PRERELEASE=false" >> $GITHUB_ENV
+            echo "Prerelease detected: false"
+          fi
 
       - name: Zip component directory
         run: |
@@ -38,4 +45,4 @@ jobs:
           files: neoom.zip
           generate_release_notes: true
           draft: false
-          prerelease: false
+          prerelease: ${{ env.IS_PRERELEASE }}
