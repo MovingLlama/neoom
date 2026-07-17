@@ -20,3 +20,6 @@ jobs:
         uses: hacs/action@main
         with:
           category: integration
+
+      - name: Home Assistant Core Integration Validation (Hassfest)
+        uses: home-assistant/actions/hassfest@master
