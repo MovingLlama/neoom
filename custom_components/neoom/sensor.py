@@ -153,6 +153,7 @@ class NeoomCloudSensor(CoordinatorEntity, SensorEntity):
         self._attr_icon = icon
         self._data_path = data_path
         self._attr_translation_key = key
+        self._attr_name = name
         
         # Eindeutige ID ist entscheidend für Home Assistant, um die Entität wiederzuerkennen
         self._attr_unique_id = f"{coordinator.site_id}_{key}"
