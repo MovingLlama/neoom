@@ -58,6 +58,14 @@
           "excess_consumption": "Solar",
           "fast_charging": "Fast"
         }
+      },
+      "phase_switching_mode": {
+        "name": "Phase switching mode",
+        "state": {
+          "automatic": "Auto",
+          "force_1_phase": "Force 1-Phase",
+          "force_3_phase": "Force 3-Phase"
+        }
       }
     }
   }

@@ -22,7 +22,7 @@ from .helpers import get_friendly_thing_name
 # mitliefert, müssen wir diese hier ("hardcoded") definieren. 
 # Neue umschaltbare Parameter müssen hier ergänzt werden.
 KNOWN_OPTIONS: Dict[str, List[str]] = {
-    "PHASE_SWITCHING_MODE": ["AUTO", "FORCE_1_PHASE", "FORCE_3_PHASE"],
+    "PHASE_SWITCHING_MODE": ["AUTOMATIC", "FORCE_1_PHASE", "FORCE_3_PHASE"],
     "OPERATING_MODE_SG_READY": ["1", "2", "3", "4"],
 }
 
@@ -161,6 +161,7 @@ class NeoomLocalSelect(CoordinatorEntity, SelectEntity):
         
         self._attr_name = f"{self._friendly_thing_name} {friendly_dp_name}"
         self._attr_unique_id = f"{thing_id}_{dp_id}_select"
+        self._attr_translation_key = self._key.lower()
         self._attr_icon = "mdi:form-select"
 
     @property
