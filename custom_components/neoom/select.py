@@ -119,6 +119,8 @@ async def async_setup_entry(
                                 options = ["griid_controlled", "excess_consumption"]
                             elif thing_type == "CHARGING_POINT_AC":
                                 options = ["griid_controlled", "excess_consumption", "fast_charging", "device_controlled"]
+                            elif thing_type == "HEAT_PUMP" or thing_type.startswith("HEAT_PUMP"):
+                                options = ["excess_consumption", "device_controlled"]
                         entities.append(
                             NeoomSettingSelect(
                                 coordinator=local_coordinator,
@@ -180,6 +182,18 @@ class NeoomLocalSelect(CoordinatorEntity, SelectEntity):
             # Aber auch wenn nicht, geben wir ihn zurück, um Inkonsistenzen zu signalisieren.
             if val is not None:
                 val_str = str(val).lower()
+                
+                # Spezielle Zuordnung für rohe SG-Ready Werte aus Modbus/Gateway
+                if self._key == "OPERATING_MODE_SG_READY":
+                    if val_str in ["65636", "0", "100", "2"]:
+                        return "2"
+                    elif val_str == "1":
+                        return "1"
+                    elif val_str == "3":
+                        return "3"
+                    elif val_str == "4":
+                        return "4"
+
                 for opt in self._attr_options:
                     if opt.lower() == val_str:
                         return opt

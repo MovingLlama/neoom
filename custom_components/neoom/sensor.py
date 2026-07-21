@@ -252,12 +252,25 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
             # Wir verzichten hier bewusst auf manuelle Skalierungs-Magie (wie Kilo/Mega präfixe).
             # Home Assistant handhabt natives Skalieren in der UI automatisch viel besser,
             # wenn die Einheit und Device Class stimmen.
-            if raw_value is not None and isinstance(raw_value, (int, float)):
+            if self._key == "OPERATING_MODE_SG_READY":
+                val_str = str(raw_value).lower() if raw_value is not None else ""
+                if val_str in ["65636", "0", "100", "2"]:
+                    self._attr_native_value = "Normal (Mode 2)"
+                elif val_str == "1":
+                    self._attr_native_value = "Sperre (Mode 1)"
+                elif val_str == "3":
+                    self._attr_native_value = "Empfehlung (Mode 3)"
+                elif val_str == "4":
+                    self._attr_native_value = "Fest EIN (Mode 4)"
+                else:
+                    self._attr_native_value = raw_value
+            elif raw_value is not None and isinstance(raw_value, (int, float)):
                 self._attr_native_value = float(raw_value)
             else:
                 self._attr_native_value = raw_value
         else:
             self._attr_native_value = None
+
 
     @property
     def device_info(self) -> DeviceInfo:

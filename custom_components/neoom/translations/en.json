@@ -59,6 +59,15 @@
           "fast_charging": "Fast"
         }
       },
+      "operating_mode_sg_ready": {
+        "name": "SG-Ready Mode",
+        "state": {
+          "1": "Forced OFF (Mode 1)",
+          "2": "Normal (Mode 2)",
+          "3": "Recommended ON (Mode 3)",
+          "4": "Forced ON (Mode 4)"
+        }
+      },
       "phase_switching_mode": {
         "name": "Phase switching mode",
         "state": {
