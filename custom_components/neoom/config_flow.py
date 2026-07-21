@@ -8,10 +8,9 @@ from typing import Any, Dict, Optional
 
 import voluptuous as vol
 
-import aiohttp
-
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .const import (
     DOMAIN,
@@ -65,8 +64,8 @@ class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             headers = {"Authorization": f"Bearer {token}"}
             
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url, headers=headers) as resp:
+                session = async_create_clientsession(self.hass)
+                async with session.get(url, headers=headers) as resp:
                         if resp.status == 401:
                             errors["base"] = "invalid_auth"
                         else:

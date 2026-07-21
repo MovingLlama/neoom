@@ -11,6 +11,7 @@ from typing import Dict, Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
@@ -70,15 +71,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await cloud_coordinator.async_config_entry_first_refresh()
 
     try:
-        # Die lokale Abfrage könnte fehlschlagen, wenn das Gateway gerade offline ist.
-        # Wir loggen den Fehler, lassen den Start aber nicht komplett scheitern.
         await local_coordinator.async_config_entry_first_refresh()
     except Exception as err:
         LOGGER.warning(
-            "Fehler beim initialen Abruf der lokalen BEAAM Daten: %s. "
-            "Die Integration wird weiterhin mit den Cloud-Daten gestartet und versucht später einen Neuaufbau der Verbindung.",
+            "Fehler beim initialen Abruf der lokalen BEAAM Daten (%s). "
+            "Setze Einrichtung aus: Home Assistant unternimmt automatische Wiederholungsversuche.",
             err,
         )
+        raise ConfigEntryNotReady(f"BEAAM Gateway unter {entry.data[CONF_BEAAM_IP]} nicht erreichbar: {err}") from err
 
     # Bereite den Speicherort in hass.data für unsere Domain vor, falls noch nicht geschehen.
     hass.data.setdefault(DOMAIN, {})
@@ -166,6 +166,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await data["cloud"].close()
         await data["local"].close()
         
+        # Entferne den Service, wenn kein weiterer neoom-Eintrag mehr existiert
+        if not hass.data[DOMAIN] and hass.services.has_service(DOMAIN, "ingest_state"):
+            hass.services.async_remove(DOMAIN, "ingest_state")
+
         LOGGER.info("neoom AI Eintrag %s erfolgreich entladen.", entry.entry_id)
 
     return unload_ok

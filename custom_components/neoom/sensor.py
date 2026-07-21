@@ -172,7 +172,8 @@ class NeoomCloudSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Gibt zusätzliche Attribute für den Cloud-Sensor zurück."""
         return {
-            "raw_data": self.coordinator.data if self.coordinator.data else {}
+            "key": self._key,
+            "data_path": self._data_path,
         }
 
     @property
@@ -289,12 +290,11 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Gibt die Konfiguration des BEAAM für dieses Gerät/Thing zurück."""
-        # Gib die komplette Konfiguration dieses Datenpunkts als Attribute aus.
-        # Nützlich zum Debuggen und für Templates in Home Assistant.
+        """Gibt spezifische Attribute für diesen Datenpunkt zurück."""
         return {
-            "all_config": self.coordinator.data.get("config", {}) if self.coordinator.data else {},
-            "raw_states": self.coordinator.data.get("states", {}) if self.coordinator.data else {}
+            "thing_id": self._thing_id,
+            "datapoint_id": self._dp_id,
+            "key": self._key,
         }
 
     def _map_unit(self, unit_str: str) -> Optional[str]:

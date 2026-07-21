@@ -11,10 +11,10 @@ from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
 import aiohttp
-import async_timeout
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
@@ -49,8 +49,8 @@ class NeoomCloudCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         )
         self.token = token
         self.site_id = site_id
-        # ClientSession für asynchrone HTTP-Anfragen. Muss später geschlossen werden.
-        self.session = aiohttp.ClientSession()
+        # ClientSession wird von Home Assistant zentral verwaltet
+        self.session = async_get_clientsession(hass)
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Ruft die neuesten Daten von der neoom AI Cloud ab.
@@ -67,7 +67,7 @@ class NeoomCloudCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         try:
             # Setze ein asynchrones Timeout von 10 Sekunden für alle Cloud-Anfragen,
             # um zu verhindern, dass die Update-Schleife blockiert wird, wenn die Server langsam antworten.
-            async with async_timeout.timeout(10):
+            async with asyncio.timeout(10):
                 headers = {"Authorization": f"Bearer {self.token}"}
                 
                 # 1. Allgemeine Site-Informationen abrufen (enthält u.a. Tarife, Adressen, etc.)
@@ -88,15 +88,6 @@ class NeoomCloudCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     resp.raise_for_status()
                     flow_data: Dict[str, Any] = await resp.json()
 
-            # Write raw cloud data to a JSON file for analysis
-            try:
-                import json
-                filepath = f"{self.hass.config.config_dir}/neoom_cloud_data.json"
-                with open(filepath, "w") as f:
-                    json.dump({"site": site_data, "flow": flow_data}, f, indent=2)
-            except Exception as e:
-                LOGGER.error("Failed to dump cloud data: %s", e)
-
             # Wir bündeln beide API-Antworten in einem einzigen Dictionary,
             # das dann unseren Entitäten über `coordinator.data` zur Verfügung steht.
             return {
@@ -108,17 +99,13 @@ class NeoomCloudCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             # Fängt alle Fehler ab, die während der HTTP-Kommunikation auftreten
             # (z.B. Verbindungsabbrüche, DNS-Probleme).
             raise UpdateFailed(f"Fehler bei der Kommunikation mit der neoom AI API: {err}") from err
-        except asyncio.TimeoutError as err:
-            # Fängt Überschreitungen des async_timeout ab
+        except TimeoutError as err:
+            # Fängt Überschreitungen des asyncio.timeout ab
             raise UpdateFailed("Timeout bei der Verbindung zur neoom AI API.") from err
 
     async def close(self) -> None:
-        """Schließt die aufrechterhaltene HTTP-Session.
-        
-        Sollte aufgerufen werden, wenn die Integration entladen wird,
-        um Verbindungslecks (Resource Leaks) zu verhindern.
-        """
-        await self.session.close()
+        """Schließen-Methode (Session wird von Home Assistant verwaltet)."""
+        pass
 
 
 class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
@@ -141,7 +128,7 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         )
         self.ip = ip
         self.key = key
-        self.session = aiohttp.ClientSession()
+        self.session = async_get_clientsession(hass)
         
         # Speichert die statische Konfiguration des Gateways,
         # da sich die Struktur der angebundenen Geräte (Wechselrichter, Speicher) 
@@ -163,7 +150,7 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         
         try:
             # Längeres Timeout für den initialen Konfigurationsabruf
-            async with async_timeout.timeout(10):
+            async with asyncio.timeout(10):
                 async with self.session.get(url, headers=headers) as resp:
                     if resp.status == 401:
                         raise ConfigEntryAuthFailed("Lokaler BEAAM API Key ist ungültig oder abgewiesen.")
@@ -188,57 +175,28 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                                     LOGGER.warning("Injected virtual OPERATING_MODE_SG_READY for HEAT_PUMP: %s", thing_id)
                     
                     self.beaam_config = config
-                    LOGGER.warning("BEAAM Konfiguration (Gerätestruktur) erfolgreich geladen: %s", self.beaam_config)
-                    try:
-                        import json
-                        filepath = f"{self.hass.config.config_dir}/neoom_local_config.json"
-                        with open(filepath, "w") as f:
-                            json.dump(config, f, indent=2)
-                    except Exception as e:
-                        LOGGER.error("Failed to dump local config: %s", e)
+                    LOGGER.debug("BEAAM Konfiguration (Gerätestruktur) erfolgreich geladen.")
         except Exception as err:
             # Wird an die aufrufende Methode (_async_update_data) weitergereicht.
             raise UpdateFailed(f"Konnte BEAAM Konfiguration nicht laden: {err}") from err
 
     async def _fetch_thing_state(self, thing_id: str, headers: Dict[str, str]) -> Optional[Dict[str, Any]]:
-        """Hilfsfunktion: Ruft den detaillierten Status eines einzelnen Geräts ('Thing') auf dem BEAAM ab.
-
-        Args:
-            thing_id: Die eindeutige ID des Geräts (aus der Konfiguration).
-            headers: Authorization-Header für die API.
-
-        Returns:
-            Das vom Gateway zurückgegebene Dictionary mit den Gerätestatusdaten,
-            oder None, wenn der Aufruf fehlschlägt.
-        """
+        """Hilfsfunktion: Ruft den detaillierten Status eines einzelnen Geräts ('Thing') auf dem BEAAM ab."""
         url = f"http://{self.ip}/api/v1/things/{thing_id}/states"
         try:
-            # Wir geben einzelnen Geräten einen kurzen Timeout (5 Sekunden).
-            # Wenn ein Gerät im rs485 Bus hängt, soll es nicht den Rest blockieren.
-            async with async_timeout.timeout(5):
+            async with asyncio.timeout(5):
                 async with self.session.get(url, headers=headers) as resp:
                     if resp.status == 200:
                         return await resp.json()
         except Exception as err:
-            # Wir loggen den Fehler nur als DEBUG, um das Log nicht mit Fehlern unzugänglicher Geräte zu fluten.
-            # Das Gerät wird in diesem Update-Zyklus ignoriert.
             LOGGER.debug("Konnte Status für Thing '%s' nicht abrufen: %s", thing_id, err)
         return None
 
     async def _fetch_thing_settings(self, thing_id: str, headers: Dict[str, str]) -> Optional[Dict[str, Any]]:
-        """Hilfsfunktion: Ruft die Einstellungen eines einzelnen Geräts ('Thing') auf dem BEAAM ab.
-
-        Args:
-            thing_id: Die eindeutige ID des Geräts (aus der Konfiguration).
-            headers: Authorization-Header für die API.
-
-        Returns:
-            Das vom Gateway zurückgegebene Dictionary mit den Einstellungen,
-            oder None, wenn der Aufruf fehlschlägt.
-        """
+        """Hilfsfunktion: Ruft die Einstellungen eines einzelnen Geräts ('Thing') auf dem BEAAM ab."""
         url = f"http://{self.ip}/api/v1/things/{thing_id}/settings"
         try:
-            async with async_timeout.timeout(5):
+            async with asyncio.timeout(5):
                 async with self.session.get(url, headers=headers) as resp:
                     if resp.status == 200:
                         return await resp.json()
@@ -247,37 +205,15 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         return None
 
     async def _async_update_data(self) -> Dict[str, Any]:
-        """Ruft die Echtzeit-Statusdaten vom BEAAM Gateway ab.
-
-        Der Ablauf ist:
-        1. Stelle sicher, dass wir wissen, welche Geräte es gibt (Konfiguration laden).
-        2. Hole den globalen "Site-State" (Zusammenfassung der Energieflüsse).
-        3. Parallel: Hole detaillierte Statusdaten für alle bekannten Geräte einzeln.
-        
-        Returns:
-            Ein Dictionary enthaltend die statische Konfiguration und
-            eine Map (Wörterbuch) aller aktuellen Sensorwerte:
-            {"config": {...}, "states": { "dataPointId": state_object, ... }}
-            
-        Raises:
-            UpdateFailed: Bei allgemeinen Kommunikationsproblemen.
-            ConfigEntryAuthFailed: Wenn die Zugangsdaten falsch sind.
-        """
-        # Stelle sicher, dass die Gerätestruktur im Speicher ist
+        """Ruft die Echtzeit-Statusdaten vom BEAAM Gateway ab."""
         await self._ensure_config_loaded()
 
         headers = {"Authorization": f"Bearer {self.key}"}
-
-        # In diesem Dictionary sammeln wir aggregiert alle Datenpunkte 
-        # (egal ob sie von der Site-Übersicht oder von Detail-Abfragen stammen).
-        # Key: dataPointId (die interne Sensor-ID), Value: Das komplette Objekt des Werts
         state_map: Dict[str, Any] = {}
         settings_map: Dict[str, Dict[str, Any]] = {}
 
         try:
-            # Gesamt-Timeout für den gesamten Refresh-Zyklus
-            async with async_timeout.timeout(20):
-                
+            async with asyncio.timeout(20):
                 # 1. Globalen Site-Status abrufen
                 url_site = f"http://{self.ip}/api/v1/site/state"
                 try:
@@ -287,7 +223,6 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                         resp.raise_for_status()
                         site_data: Dict[str, Any] = await resp.json()
                         
-                        # Extrahiere die übergeordneten Datenpunkte (Energy-Flow) aus der Antwort
                         if "energyFlow" in site_data and "states" in site_data["energyFlow"]:
                             for item in site_data["energyFlow"]["states"]:
                                 state_map[item["dataPointId"]] = item
@@ -316,43 +251,21 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                         )
                     
                     if thing_ids:
-                        # Warten auf alle Status- und Einstellungsabfragen parallel
-                        results_states = await asyncio.gather(*tasks_states)
-                        results_settings = await asyncio.gather(*tasks_settings)
+                        results_states = await asyncio.gather(*tasks_states, return_exceptions=True)
+                        results_settings = await asyncio.gather(*tasks_settings, return_exceptions=True)
                         
-                        # Verarbeite die Ergebnisse der Statusabfragen
                         for thing_id, res in zip(thing_ids, results_states):
-                            if res and "states" in res:
+                            if isinstance(res, dict) and "states" in res:
                                 for item in res["states"]:
                                     state_map[item["dataPointId"]] = item
                                     state_map[f"{thing_id}_{item['key']}"] = item
                         
-                        # Verarbeite die Ergebnisse der Einstellungsabfragen
                         for thing_id, res in zip(thing_ids, results_settings):
-                            if res and "settings" in res:
+                            if isinstance(res, dict) and "settings" in res:
                                 settings_map[thing_id] = {
                                     s["key"]: s["value"] for s in res["settings"] if s.get("key")
                                 }
 
-                # Write raw local states to a JSON file for analysis
-                try:
-                    import json
-                    filepath = f"{self.hass.config.config_dir}/neoom_local_states.json"
-                    with open(filepath, "w") as f:
-                        json.dump(state_map, f, indent=2)
-                except Exception as e:
-                    LOGGER.error("Failed to dump local states: %s", e)
-
-                # Write raw settings to a JSON file for analysis
-                try:
-                    import json
-                    filepath_settings = f"{self.hass.config.config_dir}/neoom_local_settings.json"
-                    with open(filepath_settings, "w") as f:
-                        json.dump(settings_map, f, indent=2)
-                except Exception as e:
-                    LOGGER.error("Failed to dump local settings: %s", e)
-
-                # Returniere die fertige Datenstruktur für unsere Entitäts-Klassen
                 return {
                     "config": self.beaam_config,
                     "states": state_map,
@@ -361,30 +274,18 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
         except aiohttp.ClientError as err:
             raise UpdateFailed(f"Kommunikationsfehler (Netzwerk/HTTP) mit BEAAM Gateway: {err}") from err
-        except asyncio.TimeoutError as err:
+        except TimeoutError as err:
             raise UpdateFailed("Timeout beim Erfassen lokaler Daten via BEAAM.") from err
 
 
     async def async_send_command(self, thing_id: str, key: str, value: Any) -> None:
-        """Sendet einen Steuerungsbefehl an die BEAAM API (ändert z.B. einen Wert am Wechselrichter).
-        
-        Wird beispielsweise von Number- (Slider) oder Select-Entitäten aufgerufen.
-
-        Args:
-            thing_id: Die eindeutige ID des Zielgeräts.
-            key: Der Name (Key) des Parameters, der geändert werden soll (z.B. "TARGET_POWER").
-            value: Der neue Zielwert. Kann numerisch oder Text sein, je nach Parameter.
-            
-        Raises:
-            Exception: Wenn der der HTTP-Aufruf nicht erfolgreich ist (Statuscode ungleich 2xx) oder ein Timeout auftritt.
-        """
+        """Sendet einen Steuerungsbefehl an die BEAAM API."""
         url = f"http://{self.ip}/api/v1/things/{thing_id}/commands"
         headers = {
             "Authorization": f"Bearer {self.key}",
             "Content-Type": "application/json"
         }
         
-        # Die BEAAM API erwartet eine Liste von Befehlen als JSON Array
         payload = [
             {
                 "key": key,
@@ -395,34 +296,17 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         LOGGER.debug("Sende Befehl an lokales BEAAM Gerät '%s': '%s' = '%s'", thing_id, key, value)
         
         try:
-            async with async_timeout.timeout(10):
+            async with asyncio.timeout(10):
                 async with self.session.post(url, headers=headers, json=payload) as resp:
                     resp.raise_for_status()
                     LOGGER.info("Befehl an BEAAM erfolgreich gesendet: %s -> %s", key, value)
-                    
-                    # Wenn wir einen Wert erfolgreich geschrieben haben, signalisieren wir 
-                    # dem Koordinator, dass er sofort frische Daten vom Gateway holen soll.
-                    # Dadurch kann die Home Assistant Oberfläche den geänderten Wert ohne
-                    # große Verzögerung anziegen.
                     await self.async_request_refresh()
         except Exception as err:
             LOGGER.error("Schwerwiegender Fehler beim Senden des Befehls an '%s': %s", thing_id, err)
             raise
 
     async def async_ingest_state(self, thing_id: str, key: str, value: Any) -> None:
-        """Sendet (ingests) einen Sensorwert an ein generisches Gerät im BEAAM Gateway.
-        
-        Dies erlaubt es Home Assistant, als Datenquelle für das neoom System zu dienen.
-        Wird beispielsweise als Home Assistant Dienst aufgerufen.
-
-        Args:
-            thing_id: Die eindeutige ID des Zielgeräts (Generic Device).
-            key: Der Name (Key) des Datenpunkts (z.B. "CURRENT_P1").
-            value: Der zu übermittelnde Wert.
-            
-        Raises:
-            Exception: Wenn der HTTP-Aufruf nicht erfolgreich ist oder ein Timeout auftritt.
-        """
+        """Sendet (ingests) einen Sensorwert an ein generisches Gerät im BEAAM Gateway."""
         url = f"http://{self.ip}/api/v1/things/{thing_id}/states"
         headers = {
             "Authorization": f"Bearer {self.key}",
@@ -439,40 +323,27 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         LOGGER.debug("Sende State-Ingest an lokales BEAAM Gerät '%s': '%s' = '%s'", thing_id, key, value)
         
         try:
-            async with async_timeout.timeout(10):
+            async with asyncio.timeout(10):
                 async with self.session.post(url, headers=headers, json=payload) as resp:
                     resp.raise_for_status()
                     LOGGER.info("State-Ingest an BEAAM erfolgreich gesendet: %s -> %s", key, value)
-                    # Trigger an immediate refresh so the updated state is read back and reflected in the UI
                     await self.async_request_refresh()
         except Exception as err:
             LOGGER.error("Schwerwiegender Fehler beim Senden des States an '%s': %s", thing_id, err)
             raise
 
     async def async_send_setting(self, thing_id: str, key: str, value: Any) -> None:
-        """Sendet eine Einstellungsänderung an die BEAAM API (ändert z.B. eine Einstellung am Wechselrichter/Batterie).
-
-        Args:
-            thing_id: Die eindeutige ID des Zielgeräts.
-            key: Der Name (Key) der Einstellung, die geändert werden soll (z.B. "OPERATING_MODE_EMS").
-            value: Der neue Einstellwert.
-
-        Raises:
-            Exception: Wenn der HTTP-Aufruf fehlschlägt.
-        """
+        """Sendet eine Einstellungsänderung an die BEAAM API."""
         url = f"http://{self.ip}/api/v1/things/{thing_id}/settings"
         headers = {
             "Authorization": f"Bearer {self.key}",
             "Content-Type": "application/json"
         }
         
-        # Normalisiere den Wert für die API (BEAAM Gateway erwartet Strings für Einstellwerte)
         api_value = value
         if isinstance(value, bool):
             api_value = "true" if value else "false"
         elif isinstance(value, (int, float)):
-            # Ganze Zahlen als int-String senden, da Nachkommastellen (z.B. .0)
-            # vom Gateway-Parser oft abgelehnt werden.
             if value == int(value):
                 api_value = str(int(value))
             else:
@@ -487,7 +358,6 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         else:
             api_value = str(value)
 
-        # Die BEAAM API erwartet eine Liste von Einstellungen als JSON Array
         payload = [
             {
                 "key": key,
@@ -498,35 +368,21 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         LOGGER.info("Sende Einstellung an lokales BEAAM Gerät '%s': '%s' = '%s' (Roh: %s)", thing_id, key, api_value, value)
         
         try:
-            async with async_timeout.timeout(10):
+            async with asyncio.timeout(10):
                 async with self.session.put(url, headers=headers, json=payload) as resp:
                     response_text = await resp.text()
                     LOGGER.info("BEAAM Antwort erhalten (Status: %s): %s", resp.status, response_text)
                     resp.raise_for_status()
                     LOGGER.info("Einstellung an BEAAM erfolgreich gesendet: %s -> %s", key, api_value)
                     
-                    # Update local settings cache immediately to avoid reverting in UI
                     if self.data:
                         if "settings" not in self.data:
                             self.data["settings"] = {}
                         if thing_id not in self.data["settings"]:
                             self.data["settings"][thing_id] = {}
                         self.data["settings"][thing_id][key] = api_value
-                        
-                        # Write local settings.json cache immediately as well
-                        try:
-                            import json
-                            filepath_settings = f"{self.hass.config.config_dir}/neoom_local_settings.json"
-                            with open(filepath_settings, "w") as f:
-                                json.dump(self.data["settings"], f, indent=2)
-                        except Exception as e:
-                            LOGGER.error("Failed to dump local settings after send: %s", e)
 
-                    # Trigger state update on the entity immediately to show new value in UI
                     self.async_update_listeners()
-
-                    # Wait for 1.5 seconds to let the gateway apply the change internally,
-                    # then refresh coordinator data from the gateway.
                     await asyncio.sleep(1.5)
                     await self.async_request_refresh()
         except Exception as err:
@@ -534,5 +390,5 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             raise
 
     async def close(self) -> None:
-        """Schließt die aufrechterhaltene HTTP-Session."""
-        await self.session.close()
+        """Schließen-Methode (Session wird von Home Assistant verwaltet)."""
+        pass

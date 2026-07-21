@@ -37,7 +37,7 @@ All features listed below are fully included in the stable main version (branch 
 The project is split into two versions (branches) to ensure maximum stability:
 
 * **Stable Version (`main`):** Contains only thoroughly tested features. Releases follow the scheme `1.0.0`, `1.0.1`, etc.
-* **Beta Version (`beta`):** Used to pre-test new features and bug fixes. Currently a copy of the stable version, used for future changes. Beta releases follow the scheme `1.0.1-beta-1`, `1.0.1-beta-2`, etc., before being merged into the main branch.
+* **Beta Version (`beta` / `1.0.4-beta.1`):** Used to pre-test new features and bug fixes. **Currently in Beta testing (v1.0.4-beta.1):** Heat pump EMS mode options (Solar / Excluded) & SG-Ready state mapping (Modes 1-4). Beta releases follow the scheme `1.0.4-beta.1`, etc., before being merged into the main branch.
 
 ---
 
@@ -47,7 +47,9 @@ Various charging strategies and settings for your devices (such as battery and c
 
 * **EMS Operating Mode (`OPERATING_MODE_EMS`):**
   * **Intelligent (`GRIID_CONTROLLED`):** Uses the **neoom CONNECT Ai** optimization. Incorporates dynamic electricity tariffs (e.g. hourly variable prices), weather forecasts, and home consumption to shift charging to the cheapest, grid-friendly hours.
-  * **Solar (`DEVICE_CONTROLLED`):** Charges the battery or electric vehicle purely based on solar excess from your own PV system to maximize self-consumption.
+  * **Solar (`EXCESS_CONSUMPTION`):** Charges the battery, heat pump, or electric vehicle purely based on solar excess from your own PV system to maximize self-consumption.
+  * **Excluded (`DEVICE_CONTROLLED`):** Excludes the device (e.g. Heat Pump or EV Charger) from EMS optimization.
+* **SG-Ready Mode (`OPERATING_MODE_SG_READY`):** Select entity for Heat Pumps supporting Smart Grid states (Mode 1: Forced OFF, Mode 2: Normal, Mode 3: Recommended ON, Mode 4: Forced ON).
 * **Charge Quantity (`GRIID_CHARGING_ENERGY`):** Defines how much energy (in kWh) should be charged in intelligent mode.
 * **Departure Time (`GRIID_EV_DEPARTURE_TIME`):** Sets the target time by which the charging process must be completed (provided as a native Time entity in Home Assistant).
 
@@ -110,6 +112,7 @@ The integration automatically creates devices based on the hardware connected to
 | **Inverter** | Current power (W), energy produced (kWh), phase currents (A) |
 | **Battery Storage**| State of charge / SoC (%), charge/discharge power (W), temperature, state of health |
 | **EV Charger** | Status (connected/charging), charging power, modes (1P/3P switching via select entity) |
+| **Heat Pump** | Status, flow/return temperatures, thermal power, COP, SG-Ready mode selection (Modes 1-4) & EMS mode (Solar / Excluded) |
 
 > **Note on scaling:**
 > Home Assistant displays native units by default (e.g., Watt or Watt-hours). You can change the display unit directly in the Home Assistant frontend (e.g., to Kilowatt `kW`) by clicking the cogwheel icon of the entity.
@@ -177,7 +180,7 @@ Alle hier aufgelisteten Funktionen sind vollständig in der stabilen Hauptversio
 Das Projekt ist in zwei Versionen (Branches) unterteilt, um maximale Stabilität zu gewährleisten:
 
 * **Stabile Version (`main`):** Enthält nur gründlich getestete Funktionen. Releases folgen dem Schema `1.0.0`, `1.0.1`, etc.
-* **Beta-Version (`beta`):** Hier werden neue Funktionen und Fehlerbehebungen vorab getestet. Die Beta-Version ist aktuell eine Kopie der stabilen Version, wird aber für zukünftige Änderungen als Testumgebung genutzt. Beta-Releases folgen dem Schema `1.0.1-beta-1`, `1.0.1-beta-2`, etc., bis sie als stabil in die Hauptversion einfließen.
+* **Beta-Version (`beta` / `1.0.4-beta.1`):** Hier werden neue Funktionen und Fehlerbehebungen vorab getestet. **Aktuell im Beta-Test (v1.0.4-beta.1):** Wärmepumpen-EMS-Modi (*Solar* / *Ausgenommen*) & SG-Ready Status-Mapping (Modi 1-4). Beta-Releases folgen dem Schema `1.0.4-beta.1`, etc., bis sie als stabil in die Hauptversion einfließen.
 
 ---
 
@@ -187,7 +190,9 @@ Das Projekt ist in zwei Versionen (Branches) unterteilt, um maximale Stabilität
 
 * **Betriebsmodus EMS (`OPERATING_MODE_EMS`):**
   * **Intelligent (`GRIID_CONTROLLED`):** Dieser Modus nutzt die **neoom CONNECT Ai** Optimierung. Das System bezieht dynamische Stromtarife (z. B. stündlich variable Strompreise), Wetterprognosen sowie den Hausverbrauch ein, um den Ladevorgang kosten- und netzschonend in die günstigsten Stunden zu verschieben.
-  * **Solar (`DEVICE_CONTROLLED`):** Lädt die Batterie oder das Elektrofahrzeug rein basierend auf dem solaren Überschuss der eigenen PV-Anlage, um den Eigenverbrauch zu maximieren.
+  * **Solar (`EXCESS_CONSUMPTION`):** Lädt die Batterie, Wärmepumpe oder das Elektrofahrzeug rein basierend auf dem solaren Überschuss der eigenen PV-Anlage, um den Eigenverbrauch zu maximieren.
+  * **Ausgenommen (`DEVICE_CONTROLLED`):** Nimmt das Gerät (z.B. Wärmepumpe) aus der automatischen EMS-Steuerung heraus.
+* **SG-Ready Modus (`OPERATING_MODE_SG_READY`):** Auswahlentität für Wärmepumpen zur Steuerung der Smart-Grid-Zustände (Mode 1: Sperre, Mode 2: Normal, Mode 3: Empfehlung, Mode 4: Fest EIN).
 * **Lademenge (`GRIID_CHARGING_ENERGY`):** Legt fest, wie viel Energie (in kWh) im intelligenten Modus geladen werden soll.
 * **Abfahrtszeit (`GRIID_EV_DEPARTURE_TIME`):** Bestimmt den Zielzeitpunkt, zu dem der Ladevorgang abgeschlossen sein muss (wird als native Time-Entität in Home Assistant bereitgestellt).
 
@@ -251,6 +256,7 @@ Die Integration erstellt automatisch Geräte (Devices) basierend auf der an Ihr 
 | **Wechselrichter** | Aktuelle Leistung (W), Produzierte Energie (kWh), Phasen-Ströme (A) |
 | **Batteriespeicher**| Ladezustand / SoC (%), Lade-/Entladeleistung (W), Temperatur, State of Health |
 | **E-Ladestation** | Status (Verbunden/Lädt), Ladeleistung, Modi (1P/3P Umschaltung über Select-Entität) |
+| **Wärmepumpe** | Status, Vorlauf-/Rücklauftemperaturen, Wärmeleistung, COP, SG-Ready Modusauswahl (Mode 1-4) & EMS-Betriebsmodus (Solar / Ausgenommen) |
 
 > **Hinweis zur Skalierung:**
 > Home Assistant zeigt Ihnen standardmäßig die nativen Einheiten an (z. B. Watt oder Wattstunden). Sie können die Anzeigeeinheit direkt in der Benutzeroberfläche von Home Assistant umstellen (z. B. auf Kilowatt `kW`), indem Sie auf das Zahnrad-Symbol der jeweiligen Entität klicken.
