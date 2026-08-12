@@ -107,7 +107,7 @@ The integration automatically creates devices based on the hardware connected to
 
 | Device / Interface | Available Sensors & Controls |
 | :--- | :--- |
-| **neoom AI Cloud** | Electricity price (EUR/kWh), feed-in tariff (ct/kWh) |
+| **neoom AI Cloud** | Electricity price (ct/kWh), feed-in tariff (ct/kWh) |
 | **BEAAM Gateway** | Net grid feed, total feed-in, grid frequency, voltages (L1/L2/L3) |
 | **Inverter** | Current power (W), energy produced (kWh), phase currents (A) |
 | **Battery Storage**| State of charge / SoC (%), charge/discharge power (W), temperature, state of health |
@@ -251,7 +251,7 @@ Die Integration erstellt automatisch Geräte (Devices) basierend auf der an Ihr 
 
 | Gerät / Schnittstelle | Verfügbare Sensoren & Steuerungen |
 | :--- | :--- |
-| **neoom AI Cloud** | Strompreis (EUR/kWh), Einspeisetarif (ct/kWh) |
+| **neoom AI Cloud** | Strompreis (ct/kWh), Einspeisetarif (ct/kWh) |
 | **BEAAM Gateway** | Gesamt-Netzbezug, Gesamte Einspeisung, Netzfrequenz, Spannungen (L1/L2/L3) |
 | **Wechselrichter** | Aktuelle Leistung (W), Produzierte Energie (kWh), Phasen-Ströme (A) |
 | **Batteriespeicher**| Ladezustand / SoC (%), Lade-/Entladeleistung (W), Temperatur, State of Health |

@@ -61,7 +61,7 @@ async def async_setup_entry(
             coordinator=cloud_coordinator,
             key="electricity_price",
             name="Electricity Price",
-            unit="EUR/kWh",
+            unit="ct/kWh",
             icon="mdi:currency-eur",
             data_path="site",
         )
