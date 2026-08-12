@@ -37,7 +37,7 @@ All features listed below are fully included in the stable main version (branch 
 The project is split into two versions (branches) to ensure maximum stability:
 
 * **Stable Version (`main`):** Contains only thoroughly tested features. Releases follow the scheme `1.0.0`, `1.0.1`, etc.
-* **Beta Version (`beta` / `1.0.4-beta.3`):** Used to pre-test new features and bug fixes. **Currently in Beta testing (v1.0.4-beta.3):** Heat pump EMS mode options (Solar / Excluded), SG-Ready state mapping (Modes 1-4) & Electricity price unit fix (ct/kWh). Beta releases follow the scheme `1.0.4-beta.3`, etc., before being merged into the main branch.
+* **Beta Version (`beta`):** Used to pre-test new features and bug fixes. Beta releases follow the scheme `1.0.5-beta.1`, etc., before being merged into the main branch.
 
 ---
 
@@ -180,7 +180,7 @@ Alle hier aufgelisteten Funktionen sind vollständig in der stabilen Hauptversio
 Das Projekt ist in zwei Versionen (Branches) unterteilt, um maximale Stabilität zu gewährleisten:
 
 * **Stabile Version (`main`):** Enthält nur gründlich getestete Funktionen. Releases folgen dem Schema `1.0.0`, `1.0.1`, etc.
-* **Beta-Version (`beta` / `1.0.4-beta.3`):** Hier werden neue Funktionen und Fehlerbehebungen vorab getestet. **Aktuell im Beta-Test (v1.0.4-beta.3):** Wärmepumpen-EMS-Modi (*Solar* / *Ausgenommen*), SG-Ready Status-Mapping (Modi 1-4) & Fix für Strompreis-Einheit (ct/kWh). Beta-Releases folgen dem Schema `1.0.4-beta.3`, etc., bis sie als stabil in die Hauptversion einfließen.
+* **Beta-Version (`beta`):** Hier werden neue Funktionen und Fehlerbehebungen vorab getestet. Beta-Releases folgen dem Schema `1.0.5-beta.1`, etc., bis sie als stabil in die Hauptversion einfließen.
 
 ---
 
