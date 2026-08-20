@@ -12,7 +12,7 @@
 **neoom AI** is an unofficial custom integration for [Home Assistant](https://www.home-assistant.io/) that establishes a hybrid connection to your neoom systems (such as Staak, Beaam, etc.).
 
 It connects the best of two worlds:
-1. **neoom AI Cloud:** For tariff data, weather forecasts, and statistical values.
+1. **neoom AI Cloud:** For tariff data.
 2. **Local BEAAM Gateway:** For real-time data (updated every 15 seconds) without noticeable cloud latency.
 
 ---
@@ -155,7 +155,7 @@ logger:
 **neoom AI** ist eine inoffizielle "Custom Integration" für [Home Assistant](https://www.home-assistant.io/), die eine hybride Verbindung zu Ihren neoom-Systemen (wie Staak, Beaam, etc.) herstellt.
 
 Sie verbindet das Beste aus zwei Welten:
-1. **neoom AI Cloud:** Für Tarifdaten, Wettervorhersagen und statistische Werte.
+1. **neoom AI Cloud:** Für Tarifdaten.
 2. **Lokales BEAAM Gateway:** Für Echtzeit-Daten (im Sekundentakt) ohne spürbare Cloud-Verzögerung.
 
 ---
