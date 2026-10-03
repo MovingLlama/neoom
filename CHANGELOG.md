@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.2
+
+### Behoben
+- Vom Gateway berechnete Energie-Bilanzen (`ENERGY_CONSUMED_CALC`, `ENERGY_APPLIANCES` u. ä.) können sinken oder negativ sein. Sie werden jetzt mit `state_class: total` statt `total_increasing` angelegt, damit Home Assistant einen Rückgang nicht als Zähler-Reset wertet und die Statistiken nicht verfälscht.
+
 ## 1.1.1
 
 ### Behoben
