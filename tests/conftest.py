@@ -86,9 +86,11 @@ def mock_apis(
     beaam_ip: str = BEAAM_IP,
     energy_flow_states: list | None = None,
     thing_states: dict | None = None,
+    thing_settings: dict | None = None,
 ) -> None:
     """Registriert Antworten für Cloud- und lokale API einer Site."""
     thing_states = thing_states or {}
+    thing_settings = thing_settings or {}
     local_url = f"http://{beaam_ip}/api/v1"
     aioclient_mock.get(f"{CLOUD_API_URL}/sites/{site_id}", json={"electricity_price": 0.2})
     aioclient_mock.get(
@@ -105,7 +107,9 @@ def mock_apis(
                 )
             },
         )
-        aioclient_mock.get(f"{local_url}/things/{thing_id}/settings", json={"settings": []})
+        aioclient_mock.get(
+            f"{local_url}/things/{thing_id}/settings", json={"settings": thing_settings.get(thing_id, [])}
+        )
 
 
 @pytest.fixture(autouse=True)

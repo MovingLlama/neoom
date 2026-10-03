@@ -1,12 +1,12 @@
 """Hilfsfunktionen für die neoom AI Integration."""
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .const import DOMAIN
+from .const import DOMAIN, KNOWN_SETTINGS, SettingSpec
 
 # Ab HA 2026.8 verweist DeviceInfo über die Registry-ID (via_device_id) auf das übergeordnete
 # Gerät. Die Kennung über via_device ist veraltet und wird mit HA 2027.8 entfernt.
@@ -19,6 +19,38 @@ def gateway_identifier(site_id: str) -> Tuple[str, str]:
     Pro Site (= Konfigurationseintrag) gibt es genau ein BEAAM Gateway.
     """
     return (DOMAIN, f"beaam_{site_id}")
+
+
+def classify_setting(key: str, value: Any) -> Tuple[Optional[SettingSpec], bool]:
+    """Ordnet eine Einstellung genau einer Plattform zu.
+
+    Returns:
+        (Spezifikation, bekannt). Bekannte Einstellungen kommen aus KNOWN_SETTINGS. Für
+        unbekannte rät eine Heuristik anhand von Schlüssel und Wert (Uhrzeit, Schalter, Zahl);
+        (None, False), wenn keine Plattform passt.
+    """
+    if key in KNOWN_SETTINGS:
+        return KNOWN_SETTINGS[key], True
+
+    if isinstance(value, str):
+        if key.endswith("_TIME") and ":" in value:
+            return SettingSpec("time"), False
+        if value.lower() in ("true", "false"):
+            return SettingSpec("switch"), False
+
+    is_number = isinstance(value, (int, float)) and not isinstance(value, bool)
+    if isinstance(value, str) and ":" not in value:
+        try:
+            float(value)
+            is_number = "." in value or value.lstrip("-").isdigit()
+        except ValueError:
+            pass
+    if "ENERGY" in key:
+        # Energiewerte liefert die API in Wh
+        return SettingSpec("number", unit="kWh", device_class="energy", max_value=1000, step=0.1, scale=1000), False
+    if is_number or "POWER" in key:
+        return SettingSpec("number"), False
+    return None, False
 
 
 def virtual_sg_ready_dp_id(thing_id: str) -> str:

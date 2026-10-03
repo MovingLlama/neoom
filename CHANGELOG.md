@@ -10,6 +10,7 @@
 - Auch nach Befehlen und `neoom.ingest_state` zählt der Abgleich nicht mehr zum Timeout des Sendens.
 
 ### Verbessert
+- **Einstellungen werden über eine feste Tabelle zugeordnet.** Bekannte Einstellungen bekommen passende Einheiten: Schwellwerte der Wärmepumpe (`POWER_THRESHOLD_*`) in W, Sperr- und Anlaufzeit (`LOCK_TIME`, `RAMP_UP_TIME`) in Sekunden. Einstellungen, die das Gateway neu meldet und die die Integration noch nicht kennt, werden weiterhin anhand ihres Werts erkannt, aber standardmäßig deaktiviert angelegt; sie lassen sich in den Entitäts-Einstellungen aktivieren. Bereits vorhandene Entitäten bleiben aktiv. Jede Einstellung erzeugt nur noch eine Entität (bisher konnte z. B. ein Schlüssel mit „POWER“ und dem Wert `true` gleichzeitig Schalter und Zahl werden).
 - States und Einstellungen aller Geräte werden in einer gemeinsamen Runde parallel vom Gateway abgefragt statt in zwei Runden nacheinander. Ein Abfragezyklus dauert dadurch etwa halb so lang.
 - Ist ein einzelnes Gerät (z. B. die Batterie) über das Gateway nicht abrufbar, erscheint jetzt einmalig eine Warnung mit Gerätename und Ursache im Log; sobald es wieder antwortet, eine Info. Bisher standen solche Fehler nur im Debug-Log, und Antworten mit HTTP-Fehlercode wurden gar nicht protokolliert. Weitere Fehler desselben Geräts landen weiterhin nur im Debug-Log. Geräte ohne Einstellungen (HTTP 404 auf `/settings`) gelten nicht als Fehler.
 

@@ -1,6 +1,8 @@
 """Konstanten für die neoom AI Integration."""
 
+from dataclasses import dataclass
 from logging import Logger, getLogger
+from typing import Optional
 
 # Zentraler Logger für die gesamte Integration, erleichtert das Debugging.
 LOGGER: Logger = getLogger(__package__)
@@ -67,3 +69,40 @@ SETTING_REFRESH_DELAY: float = 1.5
 
 # Suffixe der Unique-IDs von Ingest-Entitäten (Number und Select).
 INGEST_UID_SUFFIXES: tuple[str, ...] = ("_ingest", "_ingest_select")
+
+
+# --- Einstellungen (Settings) der Things ---
+
+
+@dataclass(frozen=True)
+class SettingSpec:
+    """Beschreibt, als welche Entität eine Einstellung des Gateways angelegt wird."""
+
+    platform: str  # "number", "select", "switch" oder "time"
+    name: Optional[str] = None
+    unit: Optional[str] = None
+    device_class: Optional[str] = None
+    min_value: float = 0
+    max_value: float = 1_000_000
+    step: float = 1
+    # Faktor zwischen API- und HA-Wert (HA-Wert = API-Wert / scale), z. B. 1000 für Wh -> kWh
+    scale: float = 1
+
+
+# Bekannte Einstellungen. Sie werden mit passender Plattform, Einheit und Wertebereich angelegt.
+# Unbekannte Einstellungen erkennt eine Heuristik anhand von Schlüssel und Wert; solche
+# Entitäten sind standardmäßig deaktiviert.
+KNOWN_SETTINGS: dict[str, SettingSpec] = {
+    "OPERATING_MODE_EMS": SettingSpec("select"),
+    "BATTERY_CHARGE_FROM_GRID_ALLOWED": SettingSpec("switch", name="Allow battery charging from grid"),
+    "BATTERY_DISCHARGE_TO_GRID_ALLOWED": SettingSpec("switch", name="Allow battery discharging to grid"),
+    "GRIID_EV_DEPARTURE_TIME": SettingSpec("time", name="Departure time"),
+    "GRIID_CHARGING_ENERGY": SettingSpec(
+        "number", name="Lademenge", unit="kWh", device_class="energy", max_value=1000, step=0.1, scale=1000
+    ),
+    "PRIORITY": SettingSpec("number"),
+    "POWER_THRESHOLD_NORMAL_OP": SettingSpec("number", unit="W", device_class="power"),
+    "POWER_THRESHOLD_RECOMMENDED_OP": SettingSpec("number", unit="W", device_class="power"),
+    "RAMP_UP_TIME": SettingSpec("number", unit="s", device_class="duration"),
+    "LOCK_TIME": SettingSpec("number", unit="s", device_class="duration"),
+}

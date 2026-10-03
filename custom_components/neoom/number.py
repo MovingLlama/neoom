@@ -23,9 +23,9 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, LOGGER
+from .const import DOMAIN, LOGGER, SettingSpec
 from .coordinator import NeoomLocalCoordinator
-from .helpers import get_friendly_thing_name, is_ingest_entity_wanted
+from .helpers import classify_setting, get_friendly_thing_name, is_ingest_entity_wanted
 
 # Diese Schlüssel werden konsequent ignoriert, auch wenn die API sie als "controllable" (steuerbar) markiert.
 # Grund: Oft sind diese Werte kritisch für das Batteriemanagementsystem oder 
@@ -127,32 +127,23 @@ async def async_setup_entry(
                     continue
 
                 for key, val in thing_settings.items():
-                    # Erkennt numerische Einstellungen
-                    is_num = False
-                    if "ENERGY" in key or "POWER" in key:
-                        is_num = True
-                    elif isinstance(val, (int, float)):
-                        is_num = True
-                    elif isinstance(val, str):
-                        try:
-                            float(val)
-                            if ":" not in val and ("." in val or val.isdigit()):
-                                is_num = True
-                        except (ValueError, TypeError):
-                            pass
-                    
-                    if is_num:
-                        uid = f"{thing_id}_{key}_number"
-                        if uid not in known_number_ids:
-                            known_number_ids.add(uid)
-                            new_entities.append(
-                                NeoomSettingNumber(
-                                    coordinator=local_coordinator,
-                                    thing_id=thing_id,
-                                    thing_data=thing_data,
-                                    setting_key=key,
-                                )
+                    spec, known = classify_setting(key, val)
+                    if spec is None or spec.platform != "number":
+                        continue
+
+                    uid = f"{thing_id}_{key}_number"
+                    if uid not in known_number_ids:
+                        known_number_ids.add(uid)
+                        new_entities.append(
+                            NeoomSettingNumber(
+                                coordinator=local_coordinator,
+                                thing_id=thing_id,
+                                thing_data=thing_data,
+                                setting_key=key,
+                                spec=spec,
+                                known=known,
                             )
+                        )
 
         if new_entities:
             async_add_entities(new_entities)
@@ -337,38 +328,31 @@ class NeoomSettingNumber(CoordinatorEntity, NumberEntity):
         thing_id: str,
         thing_data: Dict[str, Any],
         setting_key: str,
+        spec: SettingSpec,
+        known: bool,
     ) -> None:
-        """Initialisiert die Einstellungs-Number-Entität."""
+        """Initialisiert die Einstellungs-Number-Entität.
+
+        Nur von der Heuristik erkannte (unbekannte) Einstellungen sind standardmäßig deaktiviert.
+        """
         super().__init__(coordinator)
         self._thing_id = thing_id
         self._thing_type: str = thing_data.get("type", "Unknown")
         self._setting_key = setting_key
-        
+        self._scale = spec.scale
+
         beaam_config = coordinator.data.get("config", {}) if coordinator.data else {}
         self._friendly_thing_name = get_friendly_thing_name(beaam_config, thing_id, self._thing_type)
-        
-        if setting_key == "GRIID_CHARGING_ENERGY":
-            friendly_dp_name = "Lademenge"
-        else:
-            friendly_dp_name = setting_key.replace("_", " ").title()
-        
-        self._attr_name = friendly_dp_name
+
+        self._attr_name = spec.name or setting_key.replace("_", " ").title()
         self._attr_unique_id = f"{thing_id}_{setting_key}_number"
-        
-        # Spezifische Konfiguration für bekannte nummerische Einstellungen
-        if "ENERGY" in setting_key:
-            # Energiewerte in kWh für HA (wird von Wh in der API konvertiert)
-            self._attr_native_unit_of_measurement = "kWh"
-            self._attr_device_class = NumberDeviceClass.ENERGY
-            self._attr_native_min_value = 0
-            self._attr_native_max_value = 1000
-            self._attr_native_step = 0.1
-            self._attr_mode = NumberMode.BOX
-        else:
-            self._attr_native_min_value = 0
-            self._attr_native_max_value = 1000000
-            self._attr_native_step = 1
-            self._attr_mode = NumberMode.BOX
+        self._attr_entity_registry_enabled_default = known
+        self._attr_native_unit_of_measurement = spec.unit
+        self._attr_device_class = NumberDeviceClass(spec.device_class) if spec.device_class else None
+        self._attr_native_min_value = spec.min_value
+        self._attr_native_max_value = spec.max_value
+        self._attr_native_step = spec.step
+        self._attr_mode = NumberMode.BOX
 
     @property
     def native_value(self) -> Optional[float]:
@@ -383,8 +367,8 @@ class NeoomSettingNumber(CoordinatorEntity, NumberEntity):
         if val is not None:
             try:
                 float_val = float(val)
-                if "ENERGY" in self._setting_key:
-                    return round(float_val / 1000.0, 3)
+                if self._scale != 1:
+                    return round(float_val / self._scale, 3)
                 return float_val
             except ValueError:
                 pass
@@ -393,8 +377,8 @@ class NeoomSettingNumber(CoordinatorEntity, NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         """Wird aufgerufen, wenn der Benutzer einen neuen Wert in der HA-Oberfläche eingibt."""
         api_value = value
-        if "ENERGY" in self._setting_key:
-            api_value = int(round(value * 1000.0))
+        if self._scale != 1:
+            api_value = int(round(value * self._scale))
             
         LOGGER.info("Setze Einstellung %s am Gerät %s auf %s", self._setting_key, self._thing_id, api_value)
         # Sende den neuen Einstellwert an das BEAAM Gateway.
