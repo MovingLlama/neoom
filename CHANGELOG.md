@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.2
+
+### Behoben
+- Die berechneten Energiefluss-Werte „Energy Consumed Calc“ und „Energy Appliances“ waren als stetig steigende Zähler (`total_increasing`) markiert. Das Gateway liefert hier aber Differenzen anderer Zähler, die sinken und negativ werden können. Home Assistant hat deshalb gewarnt („state class total_increasing, but its state is negative“) und die Statistik verfälscht. Diese Werte nutzen jetzt die Zustandsklasse `total`.
+
 ## 1.1.1
 
 ### Behoben

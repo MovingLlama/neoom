@@ -37,6 +37,10 @@ ENERGY_FLOW_ID = "energyFlow"
 # Schlüssel-Bestandteile, die einen Batterie-Ladezustand kennzeichnen.
 BATTERY_LEVEL_INDICATORS = ("SOC", "STATE_OF_CHARGE")
 
+# Schlüssel-Bestandteile von Energiewerten, die das Gateway aus anderen Zählern berechnet
+# (z.B. ENERGY_CONSUMED_CALC, ENERGY_APPLIANCES). Sie können sinken oder negativ werden.
+DERIVED_ENERGY_INDICATORS = ("CALC", "APPLIANCES")
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -452,6 +456,11 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
             ]
             if any(indicator in key_upper for indicator in non_cumulative_indicators):
                 return SensorStateClass.MEASUREMENT
+
+            # Berechnete Zählerstände (Differenz mehrerer Zähler) können sinken oder negativ
+            # werden. TOTAL_INCREASING würde jedes Absinken als Zähler-Reset werten.
+            if any(indicator in key_upper for indicator in DERIVED_ENERGY_INDICATORS):
+                return SensorStateClass.TOTAL
 
             # Zählerstände / kumulative Energiemengen (z.B. erzeugt, verbraucht, eingespeist)
             return SensorStateClass.TOTAL_INCREASING

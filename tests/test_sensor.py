@@ -38,6 +38,21 @@ ENERGY_FLOW_CONFIG = {
             "dataType": "NUMBER",
             "unitOfMeasure": "%",
         },
+        "dp-ef-imported": {
+            "key": "ENERGY_IMPORTED",
+            "dataType": "NUMBER",
+            "unitOfMeasure": "Wh",
+        },
+        "dp-ef-consumed-calc": {
+            "key": "ENERGY_CONSUMED_CALC",
+            "dataType": "NUMBER",
+            "unitOfMeasure": "Wh",
+        },
+        "dp-ef-appliances": {
+            "key": "ENERGY_APPLIANCES",
+            "dataType": "NUMBER",
+            "unitOfMeasure": "Wh",
+        },
     }
 }
 
@@ -51,6 +66,9 @@ async def _setup(hass: HomeAssistant, aioclient_mock) -> MockConfigEntry:
         energy_flow_states=[
             {"dataPointId": "dp-ef-consumption", "key": "POWER_CONSUMPTION_CALC", "value": 1234},
             {"dataPointId": "dp-ef-soc", "key": "STATE_OF_CHARGE", "value": 55},
+            {"dataPointId": "dp-ef-imported", "key": "ENERGY_IMPORTED", "value": 7860942.26},
+            {"dataPointId": "dp-ef-consumed-calc", "key": "ENERGY_CONSUMED_CALC", "value": -1562201.66},
+            {"dataPointId": "dp-ef-appliances", "key": "ENERGY_APPLIANCES", "value": -6244911.74},
         ],
         thing_states={
             BATTERY_ID: [{"dataPointId": "dp-bat-soc", "key": "STATE_OF_CHARGE", "value": 80}]
@@ -97,3 +115,18 @@ async def test_energy_flow_sensors_on_gateway(hass: HomeAssistant, aioclient_moc
     entity = er.async_get(hass).async_get(consumption_id)
     gateway = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, f"beaam_{SITE_ID}")})
     assert entity.device_id == gateway.id
+
+
+async def test_derived_energy_flow_values_are_not_total_increasing(
+    hass: HomeAssistant, aioclient_mock
+) -> None:
+    """Berechnete Energiewerte können sinken und negativ sein, echte Zähler nicht."""
+    await _setup(hass, aioclient_mock)
+
+    imported = hass.states.get(_entity_id(hass, f"beaam_{SITE_ID}_energy_flow_dp-ef-imported"))
+    assert imported.attributes["state_class"] == SensorStateClass.TOTAL_INCREASING
+
+    for dp_id in ("dp-ef-consumed-calc", "dp-ef-appliances"):
+        state = hass.states.get(_entity_id(hass, f"beaam_{SITE_ID}_energy_flow_{dp_id}"))
+        assert state.attributes["device_class"] == SensorDeviceClass.ENERGY
+        assert state.attributes["state_class"] == SensorStateClass.TOTAL
