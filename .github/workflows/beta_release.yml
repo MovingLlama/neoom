@@ -41,6 +41,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION }}
+          # Tag auf den gebauten Commit setzen, sonst legt GitHub es auf den Standard-Branch
+          target_commitish: ${{ github.sha }}
           name: Beta Release ${{ env.VERSION }}
           files: neoom.zip
           generate_release_notes: true
