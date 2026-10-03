@@ -6,40 +6,51 @@ Sie stellt eine hybride Verbindung her:
 2. Eine lokale Netzwerkverbindung zum BEAAM Gateway für Live-Energiedaten (oft aktualisiert).
 """
 
-from typing import Dict, Any
-
-from homeassistant.config_entries import ConfigEntry
+import homeassistant.helpers.config_validation as cv
+import voluptuous as vol
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-import homeassistant.helpers.config_validation as cv
-import voluptuous as vol
 
 from .const import (
-    DOMAIN,
-    CONF_CLOUD_TOKEN,
-    CONF_SITE_ID,
     CONF_BEAAM_IP,
     CONF_BEAAM_KEY,
+    CONF_CLOUD_TOKEN,
     CONF_SCAN_INTERVAL_CLOUD,
     CONF_SCAN_INTERVAL_LOCAL,
+    CONF_SITE_ID,
     DEFAULT_SCAN_INTERVAL_CLOUD,
     DEFAULT_SCAN_INTERVAL_LOCAL,
+    DOMAIN,
     INGEST_UID_SUFFIXES,
     LOGGER,
 )
-from .coordinator import NeoomCloudCoordinator, NeoomLocalCoordinator
+from .coordinator import (
+    NeoomCloudCoordinator,
+    NeoomConfigEntry,
+    NeoomData,
+    NeoomLocalCoordinator,
+)
 from .helpers import gateway_identifier, is_generic_thing, virtual_sg_ready_dp_id
 
 # Definiere die unterstützten Plattformen, die von dieser Integration geladen werden.
 # Wir unterstützen Sensoren (nur-lesen), Number-Entitäten (Zahleneingabe/Slider),
-# Select-Entitäten (Dropdown-Menüs), Switch-Entitäten (Schalter) und Time-Entitäten (Uhrzeiten).
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.NUMBER, Platform.SELECT, Platform.SWITCH, Platform.TIME]
+# Select-Entitäten (Dropdown-Menüs), Switch-Entitäten (Schalter), Time-Entitäten (Uhrzeiten)
+# und Binärsensoren (z. B. Verbindung, Notstrom aktiv).
+PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
+    Platform.SENSOR,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.SWITCH,
+    Platform.TIME,
+]
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: NeoomConfigEntry) -> bool:
     """Richtet eine neoom AI Instanz basierend auf einem Konfigurationseintrag ein.
 
     Diese Funktion wird aufgerufen, wenn der Benutzer die Integration über die UI
@@ -70,6 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass,
         token=cloud_token,
         site_id=site_id,
+        site_name=entry.title,
         scan_interval=scan_interval_cloud,
     )
 
@@ -98,15 +110,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         raise ConfigEntryNotReady(f"BEAAM Gateway unter {beaam_ip} nicht erreichbar: {err}") from err
 
-    # Bereite den Speicherort in hass.data für unsere Domain vor, falls noch nicht geschehen.
-    hass.data.setdefault(DOMAIN, {})
-
-    # Speichere unsere Coordinators unter der Eintrags-ID, damit die Plattformen (Sensor, Number)
-    # später darauf zugreifen können.
-    hass.data[DOMAIN][entry.entry_id] = {
-        "cloud": cloud_coordinator,
-        "local": local_coordinator,
-    }
+    # Die Coordinators hängen am Eintrag selbst, damit die Plattformen (Sensor, Number, ...)
+    # darauf zugreifen können. Home Assistant räumt sie beim Entladen mit dem Eintrag weg.
+    entry.runtime_data = NeoomData(cloud=cloud_coordinator, local=local_coordinator)
 
     # Listener für Optionen-Updates registrieren (z.B. geänderte Intervalle über das Zahnrad-Menü)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
@@ -143,21 +149,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         thing_id = call.data.get("thing_id")
         key = call.data.get("key")
         value = call.data.get("value")
-        
+
         # Sende den Wert an das zuständige BEAAM Gateway
         sent = False
-        for entry_id, coordinators in hass.data.get(DOMAIN, {}).items():
-            loc_coord = coordinators.get("local")
-            if loc_coord:
-                # Prüfe, ob das Thing diesem Gateway bekannt ist, oder sende wenn nur 1 Gateway existiert
-                known_things = (loc_coord.beaam_config or {}).get("things", {})
-                if thing_id in known_things or len(hass.data.get(DOMAIN, {})) == 1:
-                    try:
-                        await loc_coord.async_ingest_state(thing_id, key, value)
-                        sent = True
-                    except Exception as err:
-                        LOGGER.error("Fehler beim Senden von State-Ingest für Eintrag %s: %s", entry_id, err)
-        
+        loaded_entries: list[NeoomConfigEntry] = hass.config_entries.async_loaded_entries(DOMAIN)
+        for loaded_entry in loaded_entries:
+            loc_coord = loaded_entry.runtime_data.local
+            # Prüfe, ob das Thing diesem Gateway bekannt ist, oder sende wenn nur 1 Gateway existiert
+            known_things = (loc_coord.beaam_config or {}).get("things", {})
+            if thing_id in known_things or len(loaded_entries) == 1:
+                try:
+                    await loc_coord.async_ingest_state(thing_id, key, value)
+                    sent = True
+                except Exception as err:
+                    LOGGER.error("Fehler beim Senden von State-Ingest für Eintrag %s: %s", loaded_entry.entry_id, err)
+
         if not sent:
             LOGGER.warning("Thing '%s' wurde in keinem konfigurierten BEAAM Gateway gefunden.", thing_id)
 
@@ -177,31 +183,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: NeoomConfigEntry) -> bool:
     """Entlädt einen Konfigurationseintrag.
-    
+
     Wird aufgerufen, wenn der Benutzer die Integration über die UI löscht
     oder neu lädt. Räumt die verwendeten Ressourcen (z.B. HTTP-Sessions) auf.
-    
+
     Args:
         hass: Die Home Assistant Instanz.
         entry: Der zu entladende Konfigurationseintrag.
-        
+
     Returns:
         True, wenn das Entladen erfolgreich war.
     """
-    
-    # Entlade zuerst alle Plattformen (Sensor, Number, Select)
+
+    # Entlade zuerst alle Plattformen (Sensor, Number, Select, ...)
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        # Wenn erfolgreich, entferne unsere gespeicherten Coordinators aus hass.data
-        data: Dict[str, Any] = hass.data[DOMAIN].pop(entry.entry_id)
-        
-        # Schließe die HTTP-Sessions sauber
-        await data["cloud"].close()
-        await data["local"].close()
-        
-        # Entferne den Service, wenn kein weiterer neoom-Eintrag mehr existiert
-        if not hass.data[DOMAIN] and hass.services.has_service(DOMAIN, "ingest_state"):
+        # Geplanten Refresh nach einer Einstellungsänderung abbrechen
+        await entry.runtime_data.local.close()
+
+        # Entferne den Service, wenn kein weiterer neoom-Eintrag mehr geladen ist
+        other_entries = [
+            other
+            for other in hass.config_entries.async_entries(DOMAIN)
+            if other.entry_id != entry.entry_id and other.state is ConfigEntryState.LOADED
+        ]
+        if not other_entries and hass.services.has_service(DOMAIN, "ingest_state"):
             hass.services.async_remove(DOMAIN, "ingest_state")
 
         LOGGER.info("neoom AI Eintrag %s erfolgreich entladen.", entry.entry_id)
@@ -209,13 +216,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 
-async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def async_reload_entry(hass: HomeAssistant, entry: NeoomConfigEntry) -> None:
     """Lädt den Konfigurationseintrag neu, wenn Optionen geändert wurden."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-
-async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_migrate_entry(hass: HomeAssistant, entry: NeoomConfigEntry) -> bool:
     """Migriert Konfigurationseinträge älterer Versionen.
 
     Version 1 → 2:
@@ -251,7 +257,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-def _async_migrate_gateway_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
+def _async_migrate_gateway_device(hass: HomeAssistant, entry: NeoomConfigEntry) -> None:
     """Stellt das Gateway-Gerät von der festen Kennung auf "beaam_<site_id>" um.
 
     Gehört das alte Gerät nur zu diesem Eintrag, wird lediglich die Kennung getauscht
@@ -293,14 +299,13 @@ def _async_migrate_gateway_device(hass: HomeAssistant, entry: ConfigEntry) -> No
 
 
 async def async_remove_config_entry_device(
-    hass: HomeAssistant, entry: ConfigEntry, device_entry: dr.DeviceEntry
+    hass: HomeAssistant, entry: NeoomConfigEntry, device_entry: dr.DeviceEntry
 ) -> bool:
     """Erlaubt das Löschen von Geräten, die das BEAAM Gateway nicht mehr meldet."""
-    data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-    if not data:
+    if entry.state is not ConfigEntryState.LOADED:
         return False
 
-    local_coordinator: NeoomLocalCoordinator = data["local"]
+    local_coordinator = entry.runtime_data.local
     known_things = (local_coordinator.beaam_config or {}).get("things", {})
     site_id = entry.data.get(CONF_SITE_ID) or entry.entry_id
     protected_ids = {gateway_identifier(site_id)[1], site_id}
@@ -316,7 +321,7 @@ async def async_remove_config_entry_device(
 
 
 def _async_remove_stale_ingest_entities(
-    hass: HomeAssistant, entry: ConfigEntry, local_coordinator: NeoomLocalCoordinator
+    hass: HomeAssistant, entry: NeoomConfigEntry, local_coordinator: NeoomLocalCoordinator
 ) -> None:
     """Entfernt deaktivierte Ingest-Entitäten von Geräten, die keine Generic Devices sind.
 
@@ -351,7 +356,7 @@ def _async_remove_stale_ingest_entities(
 
 
 def _async_remove_virtual_sg_ready_selects(
-    hass: HomeAssistant, entry: ConfigEntry, local_coordinator: NeoomLocalCoordinator
+    hass: HomeAssistant, entry: NeoomConfigEntry, local_coordinator: NeoomLocalCoordinator
 ) -> None:
     """Entfernt Auswahl-Entitäten früherer Versionen für virtuelle SG-Ready-Datenpunkte.
 

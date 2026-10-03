@@ -5,32 +5,31 @@ mit denen Einstellungen am lokalen BEAAM Gateway vorgenommen werden können
 (z. B. die Abfahrtszeit für das intelligente Laden).
 """
 
+from collections.abc import Callable
 from datetime import time
-import datetime
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from homeassistant.components.time import TimeEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, LOGGER, SettingSpec
-from .coordinator import NeoomLocalCoordinator
+from .coordinator import NeoomConfigEntry, NeoomLocalCoordinator
 from .helpers import classify_setting, get_friendly_thing_name
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: Callable[[List[TimeEntity]], None],
+    entry: NeoomConfigEntry,
+    async_add_entities: Callable[[list[TimeEntity]], None],
 ) -> None:
     """Richtet die Time-Plattform basierend auf dem Konfigurationseintrag ein.
-    
+
     Erstellt Time-Entitäten für alle erkannten Uhrzeit-Einstellungen der Things
     und überwacht spätere Coordinator-Updates für neu erkannte Entitäten.
     """
-    data: Dict[str, Any] = hass.data[DOMAIN][entry.entry_id]
-    local_coordinator: NeoomLocalCoordinator = data["local"]
+    local_coordinator = entry.runtime_data.local
 
     known_time_ids: set[str] = set()
 
@@ -50,7 +49,7 @@ async def async_setup_entry(
         if not isinstance(things, dict):
             return
 
-        new_entities: List[TimeEntity] = []
+        new_entities: list[TimeEntity] = []
 
         for thing_id, thing_data in things.items():
             if not thing_data or not isinstance(thing_data, dict):
@@ -97,7 +96,7 @@ class NeoomSettingTime(CoordinatorEntity, TimeEntity):
         self,
         coordinator: NeoomLocalCoordinator,
         thing_id: str,
-        thing_data: Dict[str, Any],
+        thing_data: dict[str, Any],
         setting_key: str,
         spec: SettingSpec,
         known: bool,
@@ -107,10 +106,10 @@ class NeoomSettingTime(CoordinatorEntity, TimeEntity):
         self._thing_id = thing_id
         self._thing_type: str = thing_data.get("type", "Unknown")
         self._setting_key = setting_key
-        
+
         beaam_config = coordinator.data.get("config", {}) if coordinator.data else {}
         self._friendly_thing_name = get_friendly_thing_name(beaam_config, thing_id, self._thing_type)
-        
+
         self._attr_name = spec.name or setting_key.replace("_", " ").title()
         self._attr_entity_registry_enabled_default = known
         self._attr_translation_key = setting_key.lower()
@@ -118,15 +117,15 @@ class NeoomSettingTime(CoordinatorEntity, TimeEntity):
         self._attr_icon = "mdi:clock-outline"
 
     @property
-    def native_value(self) -> Optional[time]:
+    def native_value(self) -> time | None:
         """Gibt die aktuell im Gateway gesetzte Uhrzeit zurück."""
         if not self.coordinator.data:
             return None
-        
+
         settings_map = self.coordinator.data.get("settings", {})
         thing_settings = settings_map.get(self._thing_id, {})
         val = thing_settings.get(self._setting_key)
-        
+
         if val is not None:
             val_str = str(val)
             try:

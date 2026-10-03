@@ -1,18 +1,19 @@
 """Daten-Aktualisierungs-Koordinatoren (DataUpdateCoordinators) für neoom AI.
 
 Diese Koordinatoren sind dafür verantwortlich, in regelmäßigen Abständen Daten
-von den jeweiligen APIs (neoom AI Cloud und lokales BEAAM Gateway) abzurufen 
+von den jeweiligen APIs (neoom AI Cloud und lokales BEAAM Gateway) abzurufen
 und diese dann den Sensoren und anderen Entitäten in Home Assistant zur Verfügung zu stellen.
 Das verhindert, dass jede Entität eigene Netzwerk-Anfragen stellt, was die Systeme überlasten würde.
 """
 
 import asyncio
 import time
+from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import aiohttp
-
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -44,7 +45,7 @@ class ThingFetchError(Exception):
     """Das Gateway hat die Abfrage eines Things nicht mit HTTP 200 beantwortet."""
 
 
-class NeoomCloudCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
+class NeoomCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Koordinator für den Abruf von Daten aus der neoom AI Cloud."""
 
     def __init__(
@@ -52,6 +53,7 @@ class NeoomCloudCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         hass: HomeAssistant,
         token: str,
         site_id: str,
+        site_name: str = "",
         scan_interval: int = DEFAULT_SCAN_INTERVAL_CLOUD,
     ) -> None:
         """Initialisiert den Cloud-Koordinator.
@@ -60,6 +62,7 @@ class NeoomCloudCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             hass: Die Home Assistant Instanz.
             token: Das Authentifizierungs-Token (Bearer Token) für die Cloud.
             site_id: Die eindeutige ID des Standorts (Site).
+            site_name: Anzeigename der Site (Titel des Konfigurationseintrags).
             scan_interval: Aktualisierungsintervall in Sekunden.
         """
         super().__init__(
@@ -71,17 +74,18 @@ class NeoomCloudCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         )
         self.token = token
         self.site_id = site_id
+        self.site_name = site_name
         # ClientSession wird von Home Assistant zentral verwaltet
         self.session = async_get_clientsession(hass)
 
-    async def _async_update_data(self) -> Dict[str, Any]:
+    async def _async_update_data(self) -> dict[str, Any]:
         """Ruft die neuesten Daten von der neoom AI Cloud ab.
 
         Wird vom DataUpdateCoordinator in den konfigurierten Intervallen (DEFAULT_SCAN_INTERVAL_CLOUD) aufgerufen.
 
         Returns:
             Ein Dictionary mit den gesammelten Daten (z.B. 'site' und 'flow').
-            
+
         Raises:
             UpdateFailed: Wenn beim Abruf der Daten ein Netzwerkfehler aufgetreten ist.
             ConfigEntryAuthFailed: Wenn das Token ungültig ist (Status 401).
@@ -91,7 +95,7 @@ class NeoomCloudCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             # um zu verhindern, dass die Update-Schleife blockiert wird, wenn die Server langsam antworten.
             async with asyncio.timeout(10):
                 headers = {"Authorization": f"Bearer {self.token}"}
-                
+
                 # 1. Allgemeine Site-Informationen abrufen (enthält u.a. Tarife, Adressen, etc.)
                 url_site = f"{CLOUD_API_URL}/sites/{self.site_id}"
                 async with self.session.get(url_site, headers=headers) as resp:
@@ -99,10 +103,10 @@ class NeoomCloudCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                         # Ein 401-Fehler deutet auf ein ungültiges Token hin.
                         # Wir werfen ConfigEntryAuthFailed, damit HA den Benutzer zur erneuten Anmeldung auffordert.
                         raise ConfigEntryAuthFailed("neoom AI Cloud Token ist ungültig oder abgelaufen.")
-                    
+
                     # Bei anderen HTTP-Fehlern (4xx, 5xx) wirft raise_for_status eine Exception.
                     resp.raise_for_status()
-                    site_data: Dict[str, Any] = await resp.json()
+                    site_data: dict[str, Any] = await resp.json()
 
                 # 2. Den letzten Energiefluss abrufen (aktuelle Übersichtswerte wie Gesamtverbrauch etc.)
                 url_flow = f"{CLOUD_API_URL}/sites/{self.site_id}/energy-flow/latest"
@@ -110,7 +114,7 @@ class NeoomCloudCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     if resp.status == 401:
                         raise ConfigEntryAuthFailed("neoom AI Cloud Token ist ungültig oder abgelaufen.")
                     resp.raise_for_status()
-                    flow_data: Dict[str, Any] = await resp.json()
+                    flow_data: dict[str, Any] = await resp.json()
 
             # Wir bündeln beide API-Antworten in einem einzigen Dictionary,
             # das dann unseren Entitäten über `coordinator.data` zur Verfügung steht.
@@ -129,12 +133,8 @@ class NeoomCloudCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             # Fängt Überschreitungen des asyncio.timeout ab
             raise UpdateFailed("Timeout bei der Verbindung zur neoom AI API.") from err
 
-    async def close(self) -> None:
-        """Schließen-Methode (Session wird von Home Assistant verwaltet)."""
-        pass
 
-
-class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
+class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Koordinator für den Abruf von lokalen Live-Daten vom BEAAM Gateway."""
 
     def __init__(
@@ -166,22 +166,22 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # Geräte-Kennung des Gateways; alle Things hängen über gateway_link daran
         self.gateway_identifier = gateway_identifier(site_id)
         # Registry-ID des Gateway-Geräts, wird beim Setup in __init__.py gesetzt
-        self.gateway_device_id: Optional[str] = None
+        self.gateway_device_id: str | None = None
         # Things, deren letzte Abfrage fehlgeschlagen ist (für einmalige Warnung/Erholungsmeldung)
         self._unreachable_things: set[str] = set()
         # Geplanter Refresh nach einer Einstellungsänderung (zum Abbrechen beim Entladen)
-        self._unsub_setting_refresh: Optional[CALLBACK_TYPE] = None
+        self._unsub_setting_refresh: CALLBACK_TYPE | None = None
         self.session = async_get_clientsession(hass)
-        
+
         # Speichert die Konfiguration des Gateways. Die Struktur der angebundenen Geräte
         # (Wechselrichter, Speicher) ändert sich selten und wird daher nur alle
         # CONFIG_REFRESH_INTERVAL Sekunden neu geladen, nicht bei jedem Zyklus.
-        self.beaam_config: Optional[Dict[str, Any]] = None
+        self.beaam_config: dict[str, Any] | None = None
         # Zeitpunkt (time.monotonic), ab dem die Konfiguration neu geladen werden soll.
         self._config_refresh_due: float = 0.0
 
     @property
-    def gateway_link(self) -> Dict[str, Any]:
+    def gateway_link(self) -> dict[str, Any]:
         """DeviceInfo-Felder, die ein Thing mit dem BEAAM Gateway verknüpfen."""
         if SUPPORTS_VIA_DEVICE_ID and self.gateway_device_id:
             return {"via_device_id": self.gateway_device_id}
@@ -189,20 +189,20 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
 
     async def _ensure_config_loaded(self) -> None:
         """Stellt sicher, dass die Gerätestruktur ("Konfiguration") vom Gateway geladen und aktuell ist.
-        
-        Diese Konfiguration enhält Informationen über alle verbundenden Geräte ("Things")
+
+        Diese Konfiguration enthält Informationen über alle verbundenen Geräte ("Things")
         und ihre verfügbaren Datenpunkte ("DataPoints").
         Die API wird beim ersten Aufruf und danach alle CONFIG_REFRESH_INTERVAL Sekunden abgefragt,
-        damit neue Geräte ohne Neustart erkannt werden. Schlägt ein erneutes Laden fehl,
-        bleibt die bisherige Konfiguration erhalten.
+        damit neue Geräte ohne Neustart erkannt werden. Meldet das Gateway denselben
+        versionTimestamp wie bisher, bleibt die bisherige Konfiguration unverändert in Gebrauch.
+        Schlägt ein erneutes Laden fehl, bleibt die bisherige Konfiguration erhalten.
         """
         now = time.monotonic()
         if self.beaam_config is not None and now < self._config_refresh_due:
             return  # Konfiguration ist geladen und noch aktuell
 
         try:
-            self.beaam_config = await self._fetch_config()
-            self._config_refresh_due = now + CONFIG_REFRESH_INTERVAL
+            new_config = await self._fetch_config()
         except ConfigEntryAuthFailed:
             raise
         except Exception as err:
@@ -214,21 +214,32 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 err,
             )
             self._config_refresh_due = now + CONFIG_RETRY_INTERVAL
+            return
 
-    async def _fetch_config(self) -> Dict[str, Any]:
+        self._config_refresh_due = now + CONFIG_REFRESH_INTERVAL
+        old_version = (self.beaam_config or {}).get("versionTimestamp")
+        new_version = (new_config or {}).get("versionTimestamp")
+        if old_version is not None and old_version == new_version:
+            LOGGER.debug("BEAAM Konfiguration unverändert (versionTimestamp %s).", new_version)
+            return
+        if self.beaam_config is not None:
+            LOGGER.info("BEAAM Konfiguration hat sich geändert (versionTimestamp %s -> %s).", old_version, new_version)
+        self.beaam_config = new_config
+
+    async def _fetch_config(self) -> dict[str, Any]:
         """Lädt die Gerätestruktur vom Gateway und ergänzt virtuelle Datenpunkte."""
         url = f"http://{self.ip}/api/v1/site/configuration"
         headers = {"Authorization": f"Bearer {self.key}"}
-        
+
         # Längeres Timeout für den Konfigurationsabruf
         async with asyncio.timeout(10):
             async with self.session.get(url, headers=headers) as resp:
                 if resp.status == 401:
                     raise ConfigEntryAuthFailed("Lokaler BEAAM API Key ist ungültig oder abgewiesen.")
-                
+
                 resp.raise_for_status()
                 config = await resp.json()
-                
+
         # Meldet das Gateway bei einer Wärmepumpe keinen SG-Ready-Datenpunkt, wird ein virtueller
         # Datenpunkt ergänzt, damit der Modus angezeigt wird (der Wert kommt über den Schlüssel aus
         # den States). Er ist nicht steuerbar: Gesteuert wird nur, was das Gateway selbst als
@@ -251,7 +262,7 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         LOGGER.debug("BEAAM Konfiguration (Gerätestruktur) erfolgreich geladen.")
         return config
 
-    async def _fetch_thing_endpoint(self, thing_id: str, endpoint: str, headers: Dict[str, str]) -> Dict[str, Any]:
+    async def _fetch_thing_endpoint(self, thing_id: str, endpoint: str, headers: dict[str, str]) -> dict[str, Any]:
         """Ruft einen Endpunkt ('states' oder 'settings') eines einzelnen Geräts ('Thing') ab.
 
         Fehler werden geworfen und nach der Abfragerunde in _async_track_thing_errors ausgewertet.
@@ -266,16 +277,16 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     raise ThingFetchError(f"HTTP {resp.status}")
                 return await resp.json()
 
-    async def _fetch_thing_state(self, thing_id: str, headers: Dict[str, str]) -> Dict[str, Any]:
+    async def _fetch_thing_state(self, thing_id: str, headers: dict[str, str]) -> dict[str, Any]:
         """Hilfsfunktion: Ruft den detaillierten Status eines einzelnen Geräts ('Thing') auf dem BEAAM ab."""
         return await self._fetch_thing_endpoint(thing_id, "states", headers)
 
-    async def _fetch_thing_settings(self, thing_id: str, headers: Dict[str, str]) -> Dict[str, Any]:
+    async def _fetch_thing_settings(self, thing_id: str, headers: dict[str, str]) -> dict[str, Any]:
         """Hilfsfunktion: Ruft die Einstellungen eines einzelnen Geräts ('Thing') auf dem BEAAM ab."""
         return await self._fetch_thing_endpoint(thing_id, "settings", headers)
 
     @callback
-    def _async_track_thing_errors(self, errors: Dict[str, List[str]], thing_ids: List[str]) -> None:
+    def _async_track_thing_errors(self, errors: dict[str, list[str]], thing_ids: list[str]) -> None:
         """Meldet Fehler einzelner Things einmalig als Warnung und die Erholung als Info.
 
         Solange ein Thing nicht erreichbar ist, landen weitere Fehler nur im Debug-Log.
@@ -305,13 +316,13 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         # Things, die das Gateway nicht mehr meldet, nicht weiter verfolgen
         self._unreachable_things.intersection_update(thing_ids)
 
-    async def _async_update_data(self) -> Dict[str, Any]:
+    async def _async_update_data(self) -> dict[str, Any]:
         """Ruft die Echtzeit-Statusdaten vom BEAAM Gateway ab."""
         await self._ensure_config_loaded()
 
         headers = {"Authorization": f"Bearer {self.key}"}
-        state_map: Dict[str, Any] = {}
-        settings_map: Dict[str, Dict[str, Any]] = {}
+        state_map: dict[str, Any] = {}
+        settings_map: dict[str, dict[str, Any]] = {}
 
         try:
             async with asyncio.timeout(20):
@@ -322,8 +333,8 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                         if resp.status == 401:
                             raise ConfigEntryAuthFailed("Lokaler BEAAM API Key ist ungültig.")
                         resp.raise_for_status()
-                        site_data: Dict[str, Any] = await resp.json()
-                        
+                        site_data: dict[str, Any] = await resp.json()
+
                         if isinstance(site_data, dict) and "energyFlow" in site_data:
                             energy_flow = site_data.get("energyFlow")
                             if isinstance(energy_flow, dict) and "states" in energy_flow:
@@ -345,7 +356,7 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 # 2. Detail-Status und Einstellungen für einzelne Geräte ("Things") abrufen
                 if self.beaam_config and "things" in self.beaam_config and isinstance(self.beaam_config["things"], dict):
                     thing_ids = list(self.beaam_config["things"].keys())
-                    
+
                     if thing_ids:
                         coros_states = [self._fetch_thing_state(tid, headers) for tid in thing_ids]
                         coros_settings = [self._fetch_thing_settings(tid, headers) for tid in thing_ids]
@@ -355,15 +366,15 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                         results_states = results[: len(thing_ids)]
                         results_settings = results[len(thing_ids) :]
 
-                        errors: Dict[str, List[str]] = {}
+                        errors: dict[str, list[str]] = {}
                         for endpoint, endpoint_results in (("states", results_states), ("settings", results_settings)):
-                            for thing_id, res in zip(thing_ids, endpoint_results):
+                            for thing_id, res in zip(thing_ids, endpoint_results, strict=False):
                                 if isinstance(res, BaseException):
                                     reason = str(res) or type(res).__name__
                                     errors.setdefault(thing_id, []).append(f"{endpoint}: {reason}")
                         self._async_track_thing_errors(errors, thing_ids)
-                        
-                        for thing_id, res in zip(thing_ids, results_states):
+
+                        for thing_id, res in zip(thing_ids, results_states, strict=False):
                             if isinstance(res, dict) and "states" in res:
                                 states_list = res.get("states")
                                 if isinstance(states_list, list):
@@ -375,8 +386,8 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                                                 state_map[str(dp_id)] = item
                                             if key is not None:
                                                 state_map[f"{thing_id}_{key}"] = item
-                        
-                        for thing_id, res in zip(thing_ids, results_settings):
+
+                        for thing_id, res in zip(thing_ids, results_settings, strict=False):
                             if isinstance(res, dict) and "settings" in res:
                                 settings_list = res.get("settings")
                                 if isinstance(settings_list, list):
@@ -407,16 +418,16 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             "Authorization": f"Bearer {self.key}",
             "Content-Type": "application/json"
         }
-        
+
         payload = [
             {
                 "key": key,
                 "value": value
             }
         ]
-        
+
         LOGGER.debug("Sende Befehl an lokales BEAAM Gerät '%s': '%s' = '%s'", thing_id, key, value)
-        
+
         try:
             async with asyncio.timeout(10):
                 async with self.session.post(url, headers=headers, json=payload) as resp:
@@ -436,16 +447,16 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             "Authorization": f"Bearer {self.key}",
             "Content-Type": "application/json"
         }
-        
+
         payload = [
             {
                 "key": key,
                 "value": value
             }
         ]
-        
+
         LOGGER.debug("Sende State-Ingest an lokales BEAAM Gerät '%s': '%s' = '%s'", thing_id, key, value)
-        
+
         try:
             async with asyncio.timeout(10):
                 async with self.session.post(url, headers=headers, json=payload) as resp:
@@ -465,15 +476,12 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             "Authorization": f"Bearer {self.key}",
             "Content-Type": "application/json"
         }
-        
+
         api_value = value
         if isinstance(value, bool):
             api_value = "true" if value else "false"
         elif isinstance(value, (int, float)):
-            if value == int(value):
-                api_value = str(int(value))
-            else:
-                api_value = str(value)
+            api_value = str(int(value)) if value == int(value) else str(value)
         elif isinstance(value, str):
             if value.lower() == "true":
                 api_value = "true"
@@ -490,9 +498,9 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 "value": api_value
             }
         ]
-        
+
         LOGGER.info("Sende Einstellung an lokales BEAAM Gerät '%s': '%s' = '%s' (Roh: %s)", thing_id, key, api_value, value)
-        
+
         try:
             async with asyncio.timeout(10):
                 async with self.session.put(url, headers=headers, json=payload) as resp:
@@ -500,7 +508,7 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                     LOGGER.debug("BEAAM Antwort erhalten (Status: %s): %s", resp.status, response_text)
                     resp.raise_for_status()
                     LOGGER.info("Einstellung an BEAAM erfolgreich gesendet: %s -> %s", key, api_value)
-                    
+
                     if self.data:
                         if "settings" not in self.data:
                             self.data["settings"] = {}
@@ -536,3 +544,14 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         if self._unsub_setting_refresh is not None:
             self._unsub_setting_refresh()
             self._unsub_setting_refresh = None
+
+
+@dataclass
+class NeoomData:
+    """Laufzeitdaten eines Konfigurationseintrags (entry.runtime_data)."""
+
+    cloud: NeoomCloudCoordinator
+    local: NeoomLocalCoordinator
+
+
+type NeoomConfigEntry = ConfigEntry[NeoomData]

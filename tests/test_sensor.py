@@ -1,5 +1,6 @@
 """Tests für die Sensor-Plattform (Geräteklassen und Energiefluss-Werte)."""
 
+import pytest
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -47,6 +48,16 @@ ENERGY_FLOW_CONFIG = {
             "dataType": "NUMBER",
             "unitOfMeasure": "%",
         },
+        "dp-ef-fraction": {
+            "key": "FRACTION_PV_TO_CONSUMPTION",
+            "dataType": "NUMBER",
+            "unitOfMeasure": "None",
+        },
+        "dp-ef-power-consumption": {
+            "key": "POWER_CONSUMPTION",
+            "dataType": "NUMBER",
+            "unitOfMeasure": "W",
+        },
     }
 }
 
@@ -62,6 +73,8 @@ async def _setup(hass: HomeAssistant, aioclient_mock) -> MockConfigEntry:
             {"dataPointId": "dp-ef-soc", "key": "STATE_OF_CHARGE", "value": 55},
             {"dataPointId": "dp-ef-consumed-calc", "key": "ENERGY_CONSUMED_CALC", "value": -1562201.6},
             {"dataPointId": "dp-ef-imported", "key": "ENERGY_IMPORTED", "value": 7860942.2},
+            {"dataPointId": "dp-ef-fraction", "key": "FRACTION_PV_TO_CONSUMPTION", "value": 0.706893433065356},
+            {"dataPointId": "dp-ef-power-consumption", "key": "POWER_CONSUMPTION", "value": None},
         ],
         thing_states={
             BATTERY_ID: [{"dataPointId": "dp-bat-soc", "key": "STATE_OF_CHARGE", "value": 80}]
@@ -120,3 +133,32 @@ async def test_derived_energy_values_use_total(hass: HomeAssistant, aioclient_mo
 
     imported = hass.states.get(_entity_id(hass, f"beaam_{SITE_ID}_energy_flow_dp-ef-imported"))
     assert imported.attributes["state_class"] == SensorStateClass.TOTAL_INCREASING
+
+
+async def test_fraction_shown_as_percentage(hass: HomeAssistant, aioclient_mock) -> None:
+    """Anteile (0…1) werden in Prozent angezeigt."""
+    await _setup(hass, aioclient_mock)
+
+    state = hass.states.get(_entity_id(hass, f"beaam_{SITE_ID}_energy_flow_dp-ef-fraction"))
+    assert float(state.state) == pytest.approx(70.6893433065356)
+    assert state.attributes["unit_of_measurement"] == "%"
+    assert state.attributes["state_class"] == SensorStateClass.MEASUREMENT
+
+
+async def test_meter_only_values_disabled_by_default(hass: HomeAssistant, aioclient_mock) -> None:
+    """Werte, die nur ein eigener Verbrauchszähler liefert, sind standardmäßig deaktiviert."""
+    await _setup(hass, aioclient_mock)
+
+    entity_id = _entity_id(hass, f"beaam_{SITE_ID}_energy_flow_dp-ef-power-consumption")
+    assert er.async_get(hass).async_get(entity_id).disabled_by is er.RegistryEntryDisabler.INTEGRATION
+    # Der berechnete Verbrauch bleibt aktiv
+    calc_id = _entity_id(hass, f"beaam_{SITE_ID}_energy_flow_dp-ef-consumption")
+    assert er.async_get(hass).async_get(calc_id).disabled_by is None
+
+
+async def test_cloud_device_named_after_site(hass: HomeAssistant, aioclient_mock) -> None:
+    """Das Cloud-Gerät trägt den Namen der Site, damit sich mehrere Sites unterscheiden."""
+    entry = await _setup(hass, aioclient_mock)
+
+    device = get_device(hass, (DOMAIN, SITE_ID), entry.entry_id)
+    assert device.name == "neoom AI Cloud (Haus)"

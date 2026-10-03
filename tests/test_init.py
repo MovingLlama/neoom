@@ -51,7 +51,7 @@ async def test_migration_moves_credentials_to_data(hass: HomeAssistant, aioclien
     assert entry.data[CONF_BEAAM_KEY] == "options-key"
     assert CONF_BEAAM_KEY not in entry.options
     assert entry.options[CONF_SCAN_INTERVAL_LOCAL] == 20
-    assert hass.data[DOMAIN][entry.entry_id]["local"].key == "options-key"
+    assert entry.runtime_data.local.key == "options-key"
 
 
 async def test_setup_ignores_credentials_in_options(hass: HomeAssistant, aioclient_mock) -> None:
@@ -66,9 +66,9 @@ async def test_setup_ignores_credentials_in_options(hass: HomeAssistant, aioclie
     )
     await _setup(hass, entry)
 
-    coordinators = hass.data[DOMAIN][entry.entry_id]
-    assert coordinators["local"].key == "reauth-key"
-    assert coordinators["cloud"].token == ENTRY_DATA[CONF_CLOUD_TOKEN]
+    coordinators = entry.runtime_data
+    assert coordinators.local.key == "reauth-key"
+    assert coordinators.cloud.token == ENTRY_DATA[CONF_CLOUD_TOKEN]
 
 
 async def test_ingest_only_for_generic_devices(hass: HomeAssistant, aioclient_mock) -> None:
@@ -125,7 +125,7 @@ async def test_config_reloaded_periodically(hass: HomeAssistant, aioclient_mock)
     aioclient_mock.clear_requests()
     mock_apis(aioclient_mock, make_beaam_config(new_thing))
 
-    local = hass.data[DOMAIN][entry.entry_id]["local"]
+    local = entry.runtime_data.local
     # Vor Ablauf des Intervalls wird die Struktur nicht neu geladen
     await local.async_refresh()
     await hass.async_block_till_done()
@@ -146,7 +146,7 @@ async def test_config_reload_failure_keeps_old_config(hass: HomeAssistant, aiocl
     mock_apis(aioclient_mock, make_beaam_config())
     entry = MockConfigEntry(domain=DOMAIN, version=2, unique_id=SITE_ID, data=ENTRY_DATA)
     await _setup(hass, entry)
-    local = hass.data[DOMAIN][entry.entry_id]["local"]
+    local = entry.runtime_data.local
     old_config = local.beaam_config
 
     local._config_refresh_due = 0.0
@@ -175,3 +175,27 @@ async def test_remove_stale_device(hass: HomeAssistant, aioclient_mock) -> None:
     assert not await async_remove_config_entry_device(hass, entry, known)
     assert not await async_remove_config_entry_device(hass, entry, gateway)
     assert await async_remove_config_entry_device(hass, entry, gone)
+
+
+async def test_unchanged_version_keeps_config(hass: HomeAssistant, aioclient_mock) -> None:
+    """Gleicher versionTimestamp: Die bisherige Konfiguration bleibt in Gebrauch."""
+    config = make_beaam_config()
+    config["versionTimestamp"] = 1721051934
+    mock_apis(aioclient_mock, config)
+    entry = MockConfigEntry(domain=DOMAIN, version=2, unique_id=SITE_ID, data=ENTRY_DATA)
+    await _setup(hass, entry)
+    local = entry.runtime_data.local
+    old_config = local.beaam_config
+
+    local._config_refresh_due = 0.0
+    await local.async_refresh()
+    assert local.beaam_config is old_config
+
+    # Neuer versionTimestamp: Die Konfiguration wird ersetzt
+    changed = make_beaam_config()
+    changed["versionTimestamp"] = 1721051999
+    aioclient_mock.clear_requests()
+    mock_apis(aioclient_mock, changed)
+    local._config_refresh_due = 0.0
+    await local.async_refresh()
+    assert local.beaam_config["versionTimestamp"] == 1721051999

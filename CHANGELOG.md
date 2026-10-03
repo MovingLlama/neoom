@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1.5
+
+### Neu
+- **Binärsensoren für Ja/Nein-Datenpunkte** (Datentyp `BOOLEAN`): z. B. die Verbindung jedes Geräts zum Gateway (`CONNECTION`, Geräteklasse *Konnektivität*, unter „Diagnose“) und ob der Notstrombetrieb der Batterie aktiv ist (`EPS_MODE_ACTIVE`). Bisher wurden diese Datenpunkte ignoriert.
+- **Array-Datenpunkte** werden unterstützt: Zahlen-Listen wie Spannung und Strom pro PV-String (`VOLTAGES`, `CURRENTS`) oder `INPUTS_POWER` ergeben einen Sensor pro Eintrag („Voltages 1“, „Voltages 2“, …), Ja/Nein-Listen (`CONNECTIONS`) einen Binärsensor pro Eintrag. Text-Listen wie `ERROR_CODES` oder `OPERATING_MODES` erscheinen als ein Sensor mit allen Einträgen (leer: `none`), die vollständige Liste steht im Attribut `values`.
+- **Diagnosedaten**: Unter *Einstellungen → Geräte & Dienste → neoom AI → ⋮ → Diagnosedaten herunterladen* gibt es jetzt eine Datei mit Gerätestruktur, aktuellen Werten und Einstellungen für Fehlerberichte. Token, API-Key, IP-Adresse, Site-ID, Name und Adresse der Site sowie Seriennummern und RFID-Karten sind darin unkenntlich gemacht.
+
+### Geändert
+- Anteile im Energiefluss (`FRACTION_*`, z. B. „Fraction PV To Consumption“) werden in Prozent (0–100 %) statt als Wert zwischen 0 und 1 angezeigt.
+- Die Energiefluss-Werte `POWER_CONSUMPTION`, `ENERGY_CONSUMED` und `POWER_GRID_REMAINING` liefert das Gateway nur mit eigenem Verbrauchszähler. Sie werden bei neuen Installationen deaktiviert angelegt. Bestehende Entitäten bleiben unverändert und lassen sich bei Bedarf in den Entitäts-Einstellungen deaktivieren.
+- Das Cloud-Gerät heißt jetzt „neoom AI Cloud (<Site>)“ statt für jede Site gleich „neoom AI Cloud Site“.
+- Wertebereiche der Einstellungen: Priorität 0–100, Leistungs-Schwellwerte und Einspeise-Priorisierung 0–50.000 W, Anlauf- und Sperrzeit 0–86.400 s (bisher jeweils bis 1.000.000).
+- Die Gerätestruktur des Gateways wird alle 5 Minuten statt stündlich geprüft; neue Geräte erscheinen dadurch schneller. Meldet das Gateway denselben `versionTimestamp`, bleibt die bisherige Struktur unverändert in Gebrauch.
+
+### Intern
+- Die Coordinators liegen in `entry.runtime_data` statt in `hass.data[DOMAIN]`; die leere `close()`-Methode des Cloud-Coordinators entfällt.
+
 ## 1.1.4
 
 ### Geändert
@@ -16,6 +33,9 @@
 - Neu in der Tabelle laut offizieller BEAAM-API-Doku: Einspeise-Priorisierung (`GRID_FEED_IN_PRIORITIZATION_ENABLED` als Schalter, `GRID_FEED_IN_PRIORITIZATION_POWER` in W). Einstellungen, deren Wert das Gateway als echten Boolean statt als Text `"true"`/`"false"` liefert, werden jetzt ebenfalls als Schalter erkannt.
 - States und Einstellungen aller Geräte werden in einer gemeinsamen Runde parallel vom Gateway abgefragt statt in zwei Runden nacheinander. Ein Abfragezyklus dauert dadurch etwa halb so lang.
 - Ist ein einzelnes Gerät (z. B. die Batterie) über das Gateway nicht abrufbar, erscheint jetzt einmalig eine Warnung mit Gerätename und Ursache im Log; sobald es wieder antwortet, eine Info. Bisher standen solche Fehler nur im Debug-Log, und Antworten mit HTTP-Fehlercode wurden gar nicht protokolliert. Weitere Fehler desselben Geräts landen weiterhin nur im Debug-Log. Geräte ohne Einstellungen (HTTP 404 auf `/settings`) gelten nicht als Fehler.
+
+### Intern
+- Neuer CI-Workflow „Lint & Test“: `ruff check` und `pytest` laufen bei jedem Push und Pull Request (Tests mit einer älteren und der aktuellen Home Assistant Version). Ruff-Konfiguration in `pyproject.toml`; der bestehende Code wurde entsprechend bereinigt (u. a. moderne Typschreibweise `dict`/`X | None`, keine Leerzeichen am Zeilenende), ohne Verhaltensänderung.
 
 ## 1.1.3
 

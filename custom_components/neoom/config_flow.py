@@ -7,26 +7,25 @@ Home Assistant Oberfläche angezeigt wird, wenn er die Integration hinzufügt,
 
 import asyncio
 from collections.abc import Mapping
-from typing import Any, Dict, Optional
+from typing import Any
 
 import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
-    DOMAIN,
-    CONF_SITE_ID,
-    CONF_CLOUD_TOKEN,
+    CLOUD_API_URL,
     CONF_BEAAM_IP,
     CONF_BEAAM_KEY,
+    CONF_CLOUD_TOKEN,
     CONF_SCAN_INTERVAL_CLOUD,
     CONF_SCAN_INTERVAL_LOCAL,
+    CONF_SITE_ID,
     DEFAULT_SCAN_INTERVAL_CLOUD,
     DEFAULT_SCAN_INTERVAL_LOCAL,
-    CLOUD_API_URL,
+    DOMAIN,
     LOGGER,
 )
 
@@ -38,7 +37,7 @@ def _clean_ip(ip_str: str) -> str:
 
 class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Behandelt den Konfigurationsfluss für neoom AI.
-    
+
     Diese Klasse erbt von ConfigFlow und definiert die Schritte, die der User
     durchlaufen muss, um die Integration zu konfigurieren oder zu reauthentifizieren.
     """
@@ -50,8 +49,8 @@ class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         """Initialisierung des Config Flows."""
-        self.user_data: Dict[str, Any] = {}
-        self.sites_dict: Dict[str, str] = {}
+        self.user_data: dict[str, Any] = {}
+        self.sites_dict: dict[str, str] = {}
 
     @staticmethod
     @callback
@@ -62,10 +61,10 @@ class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return NeoomOptionsFlowHandler()
 
     async def async_step_user(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Behandelt den ersten Schritt der Einrichtung (Benutzereingabe)."""
-        errors: Dict[str, str] = {}
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             # Bereinige die IP-Adresse
@@ -74,7 +73,7 @@ class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             # Pro Site gibt es genau ein BEAAM Gateway; dasselbe Gateway darf nicht doppelt eingebunden werden
             self._async_abort_entries_match({CONF_BEAAM_IP: user_input[CONF_BEAAM_IP]})
-            
+
             token = user_input[CONF_CLOUD_TOKEN]
             beaam_ip = user_input[CONF_BEAAM_IP]
             beaam_key = user_input[CONF_BEAAM_KEY]
@@ -83,7 +82,7 @@ class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # 1. Cloud API aufrufen und Sites abfragen
             url_cloud = f"{CLOUD_API_URL}/sites"
             headers_cloud = {"Authorization": f"Bearer {token}"}
-            
+
             try:
                 async with asyncio.timeout(10):
                     async with session.get(url_cloud, headers=headers_cloud) as resp:
@@ -92,12 +91,12 @@ class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         else:
                             resp.raise_for_status()
                             data = await resp.json()
-                            
+
                             if isinstance(data, dict):
                                 sites_list = data.get("items") or data.get("data") or data.get("sites", [])
                             else:
                                 sites_list = data
-                                
+
                             self.sites_dict = {}
                             if isinstance(sites_list, list):
                                 for site in sites_list:
@@ -106,7 +105,7 @@ class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                         site_name = site.get("name") or site.get("siteName", site_id)
                                         if site_id:
                                             self.sites_dict[str(site_id)] = str(site_name)
-                            
+
                             if not self.sites_dict:
                                 errors["base"] = "cannot_connect"
                                 LOGGER.error("Keine Sites in der API-Antwort gefunden oder falsches Format.")
@@ -151,29 +150,29 @@ class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
         return self.async_show_form(
-            step_id="user", 
-            data_schema=data_schema, 
+            step_id="user",
+            data_schema=data_schema,
             errors=errors
         )
 
     async def async_step_site_selection(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Zweiter Schritt: Auswahl des Standorts (Site)."""
-        errors: Dict[str, str] = {}
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             site_id = str(user_input[CONF_SITE_ID])
-            
+
             # Eindeutige ID für den Eintrag setzen, um doppelte Instanzen derselben Site zu verhindern
             await self.async_set_unique_id(site_id)
             self._abort_if_unique_id_configured()
 
             self.user_data[CONF_SITE_ID] = site_id
             site_name = self.sites_dict.get(site_id, "neoom System")
-            
+
             return self.async_create_entry(
-                title=site_name, 
+                title=site_name,
                 data=self.user_data
             )
 
@@ -196,10 +195,10 @@ class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Behandelt die erneute Eingabe und Überprüfung der Zugangsdaten."""
-        errors: Dict[str, str] = {}
+        errors: dict[str, str] = {}
         reauth_entry = self._get_reauth_entry()
 
         if user_input is not None:
@@ -265,11 +264,11 @@ class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_reconfigure(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Behandelt die Neu-Konfiguration über das 3-Punkte-Menü."""
         reconfigure_entry = self._get_reconfigure_entry()
-        errors: Dict[str, str] = {}
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             token = user_input[CONF_CLOUD_TOKEN]
@@ -339,23 +338,23 @@ class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class NeoomOptionsFlowHandler(config_entries.OptionsFlow):
     """Behandelt das Optionen-Menü (Zahnrad / 'Konfigurieren'-Button) in Home Assistant."""
 
-    def __init__(self, config_entry: Optional[config_entries.ConfigEntry] = None) -> None:
+    def __init__(self, config_entry: config_entries.ConfigEntry | None = None) -> None:
         """Initialisiert den Optionen-Fluss."""
         # Hinweis: self.config_entry ist eine schreibgeschützte Property der Basisklasse OptionsFlow
         # und wird von Home Assistant automatisch über die ConfigEntry bereitgestellt.
         super().__init__()
 
     async def async_step_init(
-        self, user_input: Optional[Dict[str, Any]] = None
+        self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Verwaltet die Optionen für Aktualisierungsintervalle und Verbindungsdaten."""
-        errors: Dict[str, str] = {}
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             # Bereinige die IP-Adresse
             ip = _clean_ip(user_input.get(CONF_BEAAM_IP, ""))
             user_input[CONF_BEAAM_IP] = ip
-            
+
             token = user_input.get(CONF_CLOUD_TOKEN, "")
             key = user_input.get(CONF_BEAAM_KEY, "")
             site_id = self.config_entry.data.get(CONF_SITE_ID)

@@ -1,0 +1,10 @@
+[tool.ruff]
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "PIE", "RUF"]
+# Lange Zeilen (Log-Meldungen, Kommentare) sind erlaubt
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["custom_components"]

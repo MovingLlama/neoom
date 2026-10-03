@@ -1,6 +1,6 @@
 """Hilfsfunktionen für die neoom AI Integration."""
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
@@ -13,7 +13,7 @@ from .const import DOMAIN, KNOWN_SETTINGS, SettingSpec
 SUPPORTS_VIA_DEVICE_ID = "via_device_id" in dr.DeviceInfo.__annotations__
 
 
-def gateway_identifier(site_id: str) -> Tuple[str, str]:
+def gateway_identifier(site_id: str) -> tuple[str, str]:
     """Liefert die Geräte-Kennung des BEAAM Gateways einer Site.
 
     Pro Site (= Konfigurationseintrag) gibt es genau ein BEAAM Gateway.
@@ -21,7 +21,7 @@ def gateway_identifier(site_id: str) -> Tuple[str, str]:
     return (DOMAIN, f"beaam_{site_id}")
 
 
-def classify_setting(key: str, value: Any) -> Tuple[Optional[SettingSpec], bool]:
+def classify_setting(key: str, value: Any) -> tuple[SettingSpec | None, bool]:
     """Ordnet eine Einstellung genau einer Plattform zu.
 
     Returns:
@@ -61,9 +61,9 @@ def virtual_sg_ready_dp_id(thing_id: str) -> str:
     return f"{thing_id}_operating_mode_sg_ready"
 
 
-def get_friendly_thing_name(beaam_config: Dict[str, Any], thing_id: str, default_type: str) -> str:
+def get_friendly_thing_name(beaam_config: dict[str, Any], thing_id: str, default_type: str) -> str:
     """Extrahiert einen benutzerfreundlichen Namen für ein Gerät (Thing) aus der BEAAM Konfiguration.
-    
+
     Durchsucht zuerst das Thing-Objekt selbst und anschließend die siteInfo.
     Gibt als Fallback den bereinigten Gerätetyp zurück.
     """
@@ -79,21 +79,23 @@ def get_friendly_thing_name(beaam_config: Dict[str, Any], thing_id: str, default
     # 2. siteInfo durchsuchen (z.B. gridConnections, inverters, storages, pvPlants)
     site_info = beaam_config.get("siteInfo", {})
     if isinstance(site_info, dict):
-        for category, items in site_info.items():
+        for items in site_info.values():
             if isinstance(items, dict):
                 for item_id, item_data in items.items():
-                    if isinstance(item_data, dict):
-                        # Ist die ID der Eintragung identisch mit unserer thing_id?
-                        # Oder steht die thing_id als Wert in einem der Felder (z.B. meterThingId)?
-                        if item_id == thing_id or thing_id in item_data.values():
-                            if item_data.get("name"):
-                                return str(item_data["name"])
+                    # Ist die ID der Eintragung identisch mit unserer thing_id?
+                    # Oder steht die thing_id als Wert in einem der Felder (z.B. meterThingId)?
+                    if (
+                        isinstance(item_data, dict)
+                        and (item_id == thing_id or thing_id in item_data.values())
+                        and item_data.get("name")
+                    ):
+                        return str(item_data["name"])
 
     # 3. Fallback auf den (lesbar gemachten) technischen Typen
     return default_type.replace("_", " ").title()
 
 
-def is_generic_thing(thing_data: Dict[str, Any]) -> bool:
+def is_generic_thing(thing_data: dict[str, Any]) -> bool:
     """Prüft, ob ein Gerät (Thing) ein Generic Device ist.
 
     Nur Generic Devices nehmen Werte per State-Ingest an. Ihr Typ enthält
@@ -103,7 +105,7 @@ def is_generic_thing(thing_data: Dict[str, Any]) -> bool:
 
 
 def is_ingest_entity_wanted(
-    hass: HomeAssistant, platform: str, unique_id: str, thing_data: Dict[str, Any]
+    hass: HomeAssistant, platform: str, unique_id: str, thing_data: dict[str, Any]
 ) -> bool:
     """Entscheidet, ob für einen Datenpunkt eine Ingest-Entität angelegt wird.
 
@@ -119,3 +121,27 @@ def is_ingest_entity_wanted(
         return False
     entry = registry.async_get(entity_id)
     return entry is not None and entry.disabled_by is None
+
+
+def array_item_type(data_type: str) -> str | None:
+    """Liefert den Elementtyp eines Array-Datenpunkts ("NUMBER_ARRAY[]" -> "NUMBER"), sonst None."""
+    base = data_type.removesuffix("[]")
+    if base.endswith("_ARRAY"):
+        return base.removesuffix("_ARRAY")
+    return None
+
+
+def find_state(states: dict[str, Any], thing_id: str, dp_id: str, key: str) -> dict[str, Any] | None:
+    """Sucht den aktuellen Zustand eines Datenpunkts (über die ID, sonst über den Schlüssel)."""
+    return states.get(dp_id) or states.get(f"{thing_id}_{key}")
+
+
+def parse_bool(value: Any) -> bool | None:
+    """Wandelt einen Wert der API in einen Wahrheitswert um (die API liefert Booleans oder Strings)."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str) and value.lower() in ("true", "false", "1", "0"):
+        return value.lower() in ("true", "1")
+    return None
