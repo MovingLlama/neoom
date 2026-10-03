@@ -32,7 +32,11 @@ from .const import (
     LOGGER,
     SETTING_REFRESH_DELAY,
 )
-from .helpers import SUPPORTS_VIA_DEVICE_ID, gateway_identifier
+from .helpers import SUPPORTS_VIA_DEVICE_ID, gateway_identifier, get_friendly_thing_name
+
+
+class ThingFetchError(Exception):
+    """Das Gateway hat die Abfrage eines Things nicht mit HTTP 200 beantwortet."""
 
 
 class NeoomCloudCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
@@ -158,6 +162,8 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         self.gateway_identifier = gateway_identifier(site_id)
         # Registry-ID des Gateway-Geräts, wird beim Setup in __init__.py gesetzt
         self.gateway_device_id: Optional[str] = None
+        # Things, deren letzte Abfrage fehlgeschlagen ist (für einmalige Warnung/Erholungsmeldung)
+        self._unreachable_things: set[str] = set()
         # Geplanter Refresh nach einer Einstellungsänderung (zum Abbrechen beim Entladen)
         self._unsub_setting_refresh: Optional[CALLBACK_TYPE] = None
         self.session = async_get_clientsession(hass)
@@ -237,29 +243,59 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         LOGGER.debug("BEAAM Konfiguration (Gerätestruktur) erfolgreich geladen.")
         return config
 
-    async def _fetch_thing_state(self, thing_id: str, headers: Dict[str, str]) -> Optional[Dict[str, Any]]:
-        """Hilfsfunktion: Ruft den detaillierten Status eines einzelnen Geräts ('Thing') auf dem BEAAM ab."""
-        url = f"http://{self.ip}/api/v1/things/{thing_id}/states"
-        try:
-            async with asyncio.timeout(5):
-                async with self.session.get(url, headers=headers) as resp:
-                    if resp.status == 200:
-                        return await resp.json()
-        except Exception as err:
-            LOGGER.debug("Konnte Status für Thing '%s' nicht abrufen: %s", thing_id, err)
-        return None
+    async def _fetch_thing_endpoint(self, thing_id: str, endpoint: str, headers: Dict[str, str]) -> Dict[str, Any]:
+        """Ruft einen Endpunkt ('states' oder 'settings') eines einzelnen Geräts ('Thing') ab.
 
-    async def _fetch_thing_settings(self, thing_id: str, headers: Dict[str, str]) -> Optional[Dict[str, Any]]:
+        Fehler werden geworfen und nach der Abfragerunde in _async_track_thing_errors ausgewertet.
+        """
+        url = f"http://{self.ip}/api/v1/things/{thing_id}/{endpoint}"
+        async with asyncio.timeout(5):
+            async with self.session.get(url, headers=headers) as resp:
+                if endpoint == "settings" and resp.status == 404:
+                    # Things ohne Einstellungen sind kein Fehler
+                    return {"settings": []}
+                if resp.status != 200:
+                    raise ThingFetchError(f"HTTP {resp.status}")
+                return await resp.json()
+
+    async def _fetch_thing_state(self, thing_id: str, headers: Dict[str, str]) -> Dict[str, Any]:
+        """Hilfsfunktion: Ruft den detaillierten Status eines einzelnen Geräts ('Thing') auf dem BEAAM ab."""
+        return await self._fetch_thing_endpoint(thing_id, "states", headers)
+
+    async def _fetch_thing_settings(self, thing_id: str, headers: Dict[str, str]) -> Dict[str, Any]:
         """Hilfsfunktion: Ruft die Einstellungen eines einzelnen Geräts ('Thing') auf dem BEAAM ab."""
-        url = f"http://{self.ip}/api/v1/things/{thing_id}/settings"
-        try:
-            async with asyncio.timeout(5):
-                async with self.session.get(url, headers=headers) as resp:
-                    if resp.status == 200:
-                        return await resp.json()
-        except Exception as err:
-            LOGGER.debug("Konnte Einstellungen für Thing '%s' nicht abrufen: %s", thing_id, err)
-        return None
+        return await self._fetch_thing_endpoint(thing_id, "settings", headers)
+
+    @callback
+    def _async_track_thing_errors(self, errors: Dict[str, List[str]], thing_ids: List[str]) -> None:
+        """Meldet Fehler einzelner Things einmalig als Warnung und die Erholung als Info.
+
+        Solange ein Thing nicht erreichbar ist, landen weitere Fehler nur im Debug-Log.
+        """
+        things = (self.beaam_config or {}).get("things", {})
+
+        def _name(thing_id: str) -> str:
+            thing = things.get(thing_id)
+            thing_type = thing.get("type", "Thing") if isinstance(thing, dict) else "Thing"
+            return get_friendly_thing_name(self.beaam_config or {}, thing_id, thing_type)
+
+        for thing_id in thing_ids:
+            thing_errors = errors.get(thing_id)
+            if thing_errors and thing_id not in self._unreachable_things:
+                self._unreachable_things.add(thing_id)
+                LOGGER.warning(
+                    "Gerät '%s' (%s) ist über das BEAAM Gateway nicht abrufbar: %s. "
+                    "Weitere Fehler werden nur im Debug-Log protokolliert.",
+                    _name(thing_id), thing_id, "; ".join(thing_errors),
+                )
+            elif thing_errors:
+                LOGGER.debug("Gerät '%s' weiterhin nicht abrufbar: %s", thing_id, "; ".join(thing_errors))
+            elif thing_id in self._unreachable_things:
+                self._unreachable_things.discard(thing_id)
+                LOGGER.info("Gerät '%s' (%s) ist wieder erreichbar.", _name(thing_id), thing_id)
+
+        # Things, die das Gateway nicht mehr meldet, nicht weiter verfolgen
+        self._unreachable_things.intersection_update(thing_ids)
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Ruft die Echtzeit-Statusdaten vom BEAAM Gateway ab."""
@@ -310,6 +346,14 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                         results = await asyncio.gather(*coros_states, *coros_settings, return_exceptions=True)
                         results_states = results[: len(thing_ids)]
                         results_settings = results[len(thing_ids) :]
+
+                        errors: Dict[str, List[str]] = {}
+                        for endpoint, endpoint_results in (("states", results_states), ("settings", results_settings)):
+                            for thing_id, res in zip(thing_ids, endpoint_results):
+                                if isinstance(res, BaseException):
+                                    reason = str(res) or type(res).__name__
+                                    errors.setdefault(thing_id, []).append(f"{endpoint}: {reason}")
+                        self._async_track_thing_errors(errors, thing_ids)
                         
                         for thing_id, res in zip(thing_ids, results_states):
                             if isinstance(res, dict) and "states" in res:

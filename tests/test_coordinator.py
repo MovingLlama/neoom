@@ -1,6 +1,7 @@
 """Tests für das Senden von Einstellungen und Befehlen an das BEAAM Gateway."""
 
 import asyncio
+import logging
 from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
@@ -141,3 +142,47 @@ async def test_states_and_settings_fetched_in_one_round(hass: HomeAssistant, aio
     for thing_id in local.beaam_config["things"]:
         assert data["states"][f"{thing_id}_POWER"]["value"] == 1
         assert data["settings"][thing_id] == {"MAX_POWER": f"{thing_id}-max"}
+
+
+def _override(aioclient_mock, url: str, status: int) -> None:
+    """Antwortet auf url mit status, alle anderen Abfragen wie gewohnt (erster Treffer gewinnt)."""
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(url, status=status)
+    mock_apis(aioclient_mock, make_beaam_config())
+
+
+async def test_unreachable_thing_logged_once_and_recovery(
+    hass: HomeAssistant, aioclient_mock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Fällt ein Thing aus, gibt es genau eine Warnung; bei Erholung eine Info."""
+    _, local = await _setup(hass, aioclient_mock)
+    caplog.set_level(logging.DEBUG, logger="custom_components.neoom")
+
+    _override(aioclient_mock, f"{THING_URL}/states", 500)
+    await local._async_update_data()
+    await local._async_update_data()
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING and INVERTER_ID in r.getMessage()]
+    assert len(warnings) == 1
+    assert "states: HTTP 500" in warnings[0].getMessage()
+
+    caplog.clear()
+    aioclient_mock.clear_requests()
+    mock_apis(aioclient_mock, make_beaam_config())
+    data = await local._async_update_data()
+    assert f"{INVERTER_ID}_POWER" in data["states"]
+    infos = [r for r in caplog.records if r.levelno == logging.INFO and "wieder erreichbar" in r.getMessage()]
+    assert len(infos) == 1
+    assert INVERTER_ID in infos[0].getMessage()
+
+
+async def test_settings_404_is_not_an_error(
+    hass: HomeAssistant, aioclient_mock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Things ohne Einstellungen (404 auf /settings) erzeugen keine Warnung."""
+    _, local = await _setup(hass, aioclient_mock)
+    _override(aioclient_mock, f"{THING_URL}/settings", 404)
+
+    data = await local._async_update_data()
+
+    assert data["settings"][INVERTER_ID] == {}
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING and r.name.startswith("custom_components.neoom")]
