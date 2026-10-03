@@ -21,6 +21,11 @@ def gateway_identifier(site_id: str) -> Tuple[str, str]:
     return (DOMAIN, f"beaam_{site_id}")
 
 
+def virtual_sg_ready_dp_id(thing_id: str) -> str:
+    """Liefert die ID des virtuellen SG-Ready-Datenpunkts einer Wärmepumpe."""
+    return f"{thing_id}_operating_mode_sg_ready"
+
+
 def get_friendly_thing_name(beaam_config: Dict[str, Any], thing_id: str, default_type: str) -> str:
     """Extrahiert einen benutzerfreundlichen Namen für ein Gerät (Thing) aus der BEAAM Konfiguration.
     

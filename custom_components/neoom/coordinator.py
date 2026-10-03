@@ -32,7 +32,12 @@ from .const import (
     LOGGER,
     SETTING_REFRESH_DELAY,
 )
-from .helpers import SUPPORTS_VIA_DEVICE_ID, gateway_identifier, get_friendly_thing_name
+from .helpers import (
+    SUPPORTS_VIA_DEVICE_ID,
+    gateway_identifier,
+    get_friendly_thing_name,
+    virtual_sg_ready_dp_id,
+)
 
 
 class ThingFetchError(Exception):
@@ -224,22 +229,25 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 resp.raise_for_status()
                 config = await resp.json()
                 
-        # Inject virtual OPERATING_MODE_SG_READY datapoint for HEAT_PUMP things if missing
+        # Meldet das Gateway bei einer Wärmepumpe keinen SG-Ready-Datenpunkt, wird ein virtueller
+        # Datenpunkt ergänzt, damit der Modus angezeigt wird (der Wert kommt über den Schlüssel aus
+        # den States). Er ist nicht steuerbar: Gesteuert wird nur, was das Gateway selbst als
+        # steuerbar meldet.
         if config and "things" in config:
             for thing_id, thing_data in config["things"].items():
                 if thing_data and thing_data.get("type") == "HEAT_PUMP":
                     datapoints = thing_data.setdefault("dataPoints", {})
                     sg_ready_exists = any(dp.get("key") == "OPERATING_MODE_SG_READY" for dp in datapoints.values())
                     if not sg_ready_exists:
-                        virtual_dp_id = f"{thing_id}_operating_mode_sg_ready"
-                        datapoints[virtual_dp_id] = {
+                        datapoints[virtual_sg_ready_dp_id(thing_id)] = {
                             "key": "OPERATING_MODE_SG_READY",
                             "dataType": "STRING",
                             "unitOfMeasure": "None",
-                            "controllable": True
+                            "controllable": False,
+                            "virtual": True,
                         }
-                        LOGGER.debug("Injected virtual OPERATING_MODE_SG_READY for HEAT_PUMP: %s", thing_id)
-        
+                        LOGGER.debug("Virtueller SG-Ready-Datenpunkt (nur lesend) für Wärmepumpe %s ergänzt", thing_id)
+
         LOGGER.debug("BEAAM Konfiguration (Gerätestruktur) erfolgreich geladen.")
         return config
 
