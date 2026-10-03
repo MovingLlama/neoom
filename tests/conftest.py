@@ -59,19 +59,31 @@ def make_beaam_config(extra_things: dict | None = None, include_defaults: bool =
     return {"things": things, "siteInfo": {}}
 
 
-def mock_apis(aioclient_mock, beaam_config: dict, site_id: str = SITE_ID, beaam_ip: str = BEAAM_IP) -> None:
+def mock_apis(
+    aioclient_mock,
+    beaam_config: dict,
+    site_id: str = SITE_ID,
+    beaam_ip: str = BEAAM_IP,
+    energy_flow_states: list | None = None,
+    thing_states: dict | None = None,
+) -> None:
     """Registriert Antworten für Cloud- und lokale API einer Site."""
+    thing_states = thing_states or {}
     local_url = f"http://{beaam_ip}/api/v1"
     aioclient_mock.get(f"{CLOUD_API_URL}/sites/{site_id}", json={"electricity_price": 0.2})
     aioclient_mock.get(
         f"{CLOUD_API_URL}/sites/{site_id}/energy-flow/latest", json={"gateways_online_state": "ONLINE"}
     )
     aioclient_mock.get(f"{local_url}/site/configuration", json=beaam_config)
-    aioclient_mock.get(f"{local_url}/site/state", json={"energyFlow": {"states": []}})
+    aioclient_mock.get(f"{local_url}/site/state", json={"energyFlow": {"states": energy_flow_states or []}})
     for thing_id in beaam_config["things"]:
         aioclient_mock.get(
             f"{local_url}/things/{thing_id}/states",
-            json={"states": [{"dataPointId": f"dp-{thing_id}", "key": "POWER", "value": 100}]},
+            json={
+                "states": thing_states.get(
+                    thing_id, [{"dataPointId": f"dp-{thing_id}", "key": "POWER", "value": 100}]
+                )
+            },
         )
         aioclient_mock.get(f"{local_url}/things/{thing_id}/settings", json={"settings": []})
 
