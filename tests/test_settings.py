@@ -20,9 +20,12 @@ from .conftest import ENTRY_DATA, INVERTER_ID, SITE_ID, make_beaam_config, mock_
         ("GRIID_EV_DEPARTURE_TIME", "11:30", "time", True),
         ("GRIID_CHARGING_ENERGY", "17000", "number", True),
         ("LOCK_TIME", "1800", "number", True),
+        ("GRID_FEED_IN_PRIORITIZATION_ENABLED", True, "switch", True),
+        ("GRID_FEED_IN_PRIORITIZATION_POWER", 3000, "number", True),
         # Heuristik für unbekannte Einstellungen
         ("SOME_START_TIME", "06:00", "time", False),
         ("SOME_FEATURE", "TRUE", "switch", False),
+        ("SOME_BOOLEAN", False, "switch", False),
         ("SOME_LIMIT", "5", "number", False),
         ("SOME_FACTOR", "0.5", "number", False),
         ("SOME_POWER", "abc", "number", False),
@@ -31,7 +34,7 @@ from .conftest import ENTRY_DATA, INVERTER_ID, SITE_ID, make_beaam_config, mock_
         ("SOME_POWER_ENABLED", "true", "switch", False),
     ],
 )
-def test_classify_setting(key: str, value: str, platform: str | None, known: bool) -> None:
+def test_classify_setting(key: str, value: object, platform: str | None, known: bool) -> None:
     """Jede Einstellung landet auf genau einer Plattform; bekannte kommen aus der Tabelle."""
     spec, is_known = classify_setting(key, value)
     assert (spec.platform if spec else None) == platform

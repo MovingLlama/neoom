@@ -32,6 +32,9 @@ def classify_setting(key: str, value: Any) -> Tuple[Optional[SettingSpec], bool]
     if key in KNOWN_SETTINGS:
         return KNOWN_SETTINGS[key], True
 
+    if isinstance(value, bool):
+        # Die API liefert Werte als String, Zahl oder Boolean
+        return SettingSpec("switch"), False
     if isinstance(value, str):
         if key.endswith("_TIME") and ":" in value:
             return SettingSpec("time"), False

@@ -89,7 +89,9 @@ class SettingSpec:
     scale: float = 1
 
 
-# Bekannte Einstellungen. Sie werden mit passender Plattform, Einheit und Wertebereich angelegt.
+# Bekannte Einstellungen (offizielle Liste: BEAAM API 2.13.0, developer.neoom.com; LOCK_TIME und
+# RAMP_UP_TIME liefern neuere Gateways zusätzlich). Sie werden mit passender Plattform, Einheit und
+# Wertebereich angelegt.
 # Unbekannte Einstellungen erkennt eine Heuristik anhand von Schlüssel und Wert; solche
 # Entitäten sind standardmäßig deaktiviert.
 KNOWN_SETTINGS: dict[str, SettingSpec] = {
@@ -103,6 +105,8 @@ KNOWN_SETTINGS: dict[str, SettingSpec] = {
     "PRIORITY": SettingSpec("number"),
     "POWER_THRESHOLD_NORMAL_OP": SettingSpec("number", unit="W", device_class="power"),
     "POWER_THRESHOLD_RECOMMENDED_OP": SettingSpec("number", unit="W", device_class="power"),
+    "GRID_FEED_IN_PRIORITIZATION_ENABLED": SettingSpec("switch"),
+    "GRID_FEED_IN_PRIORITIZATION_POWER": SettingSpec("number", unit="W", device_class="power"),
     "RAMP_UP_TIME": SettingSpec("number", unit="s", device_class="duration"),
     "LOCK_TIME": SettingSpec("number", unit="s", device_class="duration"),
 }
