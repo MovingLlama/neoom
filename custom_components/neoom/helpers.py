@@ -43,8 +43,8 @@ def get_friendly_thing_name(beaam_config: Dict[str, Any], thing_id: str, default
 def is_generic_thing(thing_data: Dict[str, Any]) -> bool:
     """Prüft, ob ein Gerät (Thing) ein Generic Device ist.
 
-    Nur Generic Devices nehmen Werte per State-Ingest an. Der genaue Typ-Name
-    ist nicht dokumentiert, daher wird auf "GENERIC" im Typ geprüft.
+    Nur Generic Devices nehmen Werte per State-Ingest an. Ihr Typ enthält
+    "generic" (Groß-/Kleinschreibung wird ignoriert).
     """
     return "GENERIC" in str(thing_data.get("type") or "").upper()
 
