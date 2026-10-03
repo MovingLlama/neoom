@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.6
+
+### Behoben
+- Der Dienst `neoom.ingest_state` schlug auf Home Assistant vor 2025.1 fehl (seit 1.1.5 wurde eine Funktion genutzt, die es dort noch nicht gibt). Die Integration unterstützt laut `hacs.json` weiterhin Home Assistant ab 2024.12.
+
+### Doku
+- README: Der SG-Ready-Modus der Wärmepumpe wird in der Regel vom BEAAM Gateway selbst je nach verfügbarer Energie gesetzt. Umstellbar ist er in Home Assistant nur, wenn das Gateway den Datenpunkt als steuerbar meldet; sonst wird er nur angezeigt.
+
 ## 1.1.5
 
 ### Neu

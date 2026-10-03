@@ -18,6 +18,7 @@ from custom_components.neoom.const import (
 )
 
 from .conftest import (
+    BEAAM_IP,
     ENTRY_DATA,
     GENERIC_ID,
     INVERTER_ID,
@@ -199,3 +200,21 @@ async def test_unchanged_version_keeps_config(hass: HomeAssistant, aioclient_moc
     local._config_refresh_due = 0.0
     await local.async_refresh()
     assert local.beaam_config["versionTimestamp"] == 1721051999
+
+
+async def test_ingest_state_service_posts_to_gateway(hass: HomeAssistant, aioclient_mock) -> None:
+    """Der Dienst neoom.ingest_state sendet den Wert an das Gateway, das das Thing kennt."""
+    mock_apis(aioclient_mock, make_beaam_config())
+    entry = MockConfigEntry(domain=DOMAIN, version=2, unique_id=SITE_ID, data=ENTRY_DATA)
+    await _setup(hass, entry)
+    url = f"http://{BEAAM_IP}/api/v1/things/{GENERIC_ID}/states"
+    aioclient_mock.post(url, json={})
+
+    await hass.services.async_call(
+        DOMAIN, "ingest_state", {"thing_id": GENERIC_ID, "key": "POWER", "value": 42}, blocking=True
+    )
+
+    posts = [call for call in aioclient_mock.mock_calls if call[0] == "POST" and str(call[1]) == url]
+    assert len(posts) == 1
+    # Das Dienst-Schema (cv.string vor Coerce(float)) liefert den Wert als Text
+    assert posts[0][2] == [{"key": "POWER", "value": "42"}]

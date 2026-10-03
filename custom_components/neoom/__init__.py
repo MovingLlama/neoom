@@ -152,7 +152,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: NeoomConfigEntry) -> boo
 
         # Sende den Wert an das zuständige BEAAM Gateway
         sent = False
-        loaded_entries: list[NeoomConfigEntry] = hass.config_entries.async_loaded_entries(DOMAIN)
+        # Nicht async_loaded_entries: das gibt es erst ab HA 2025.1 (hacs.json erlaubt 2024.12)
+        loaded_entries: list[NeoomConfigEntry] = [
+            loaded
+            for loaded in hass.config_entries.async_entries(DOMAIN)
+            if loaded.state is ConfigEntryState.LOADED
+        ]
         for loaded_entry in loaded_entries:
             loc_coord = loaded_entry.runtime_data.local
             # Prüfe, ob das Thing diesem Gateway bekannt ist, oder sende wenn nur 1 Gateway existiert
