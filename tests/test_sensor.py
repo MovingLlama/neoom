@@ -33,6 +33,16 @@ ENERGY_FLOW_CONFIG = {
             "dataType": "NUMBER",
             "unitOfMeasure": "W",
         },
+        "dp-ef-consumed-calc": {
+            "key": "ENERGY_CONSUMED_CALC",
+            "dataType": "NUMBER",
+            "unitOfMeasure": "Wh",
+        },
+        "dp-ef-imported": {
+            "key": "ENERGY_IMPORTED",
+            "dataType": "NUMBER",
+            "unitOfMeasure": "Wh",
+        },
         "dp-ef-soc": {
             "key": "STATE_OF_CHARGE",
             "dataType": "NUMBER",
@@ -51,6 +61,8 @@ async def _setup(hass: HomeAssistant, aioclient_mock) -> MockConfigEntry:
         energy_flow_states=[
             {"dataPointId": "dp-ef-consumption", "key": "POWER_CONSUMPTION_CALC", "value": 1234},
             {"dataPointId": "dp-ef-soc", "key": "STATE_OF_CHARGE", "value": 55},
+            {"dataPointId": "dp-ef-consumed-calc", "key": "ENERGY_CONSUMED_CALC", "value": -1562201.6},
+            {"dataPointId": "dp-ef-imported", "key": "ENERGY_IMPORTED", "value": 7860942.2},
         ],
         thing_states={
             BATTERY_ID: [{"dataPointId": "dp-bat-soc", "key": "STATE_OF_CHARGE", "value": 80}]
@@ -97,3 +109,15 @@ async def test_energy_flow_sensors_on_gateway(hass: HomeAssistant, aioclient_moc
     entity = er.async_get(hass).async_get(consumption_id)
     gateway = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, f"beaam_{SITE_ID}")})
     assert entity.device_id == gateway.id
+
+
+async def test_derived_energy_values_use_total(hass: HomeAssistant, aioclient_mock) -> None:
+    """Berechnete Bilanzen (können sinken/negativ sein) sind TOTAL, echte Zähler TOTAL_INCREASING."""
+    await _setup(hass, aioclient_mock)
+
+    calc = hass.states.get(_entity_id(hass, f"beaam_{SITE_ID}_energy_flow_dp-ef-consumed-calc"))
+    assert calc.state == "-1562201.6"
+    assert calc.attributes["state_class"] == SensorStateClass.TOTAL
+
+    imported = hass.states.get(_entity_id(hass, f"beaam_{SITE_ID}_energy_flow_dp-ef-imported"))
+    assert imported.attributes["state_class"] == SensorStateClass.TOTAL_INCREASING
