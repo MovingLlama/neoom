@@ -1,6 +1,19 @@
 """Hilfsfunktionen für die neoom AI Integration."""
 
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
+
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
+
+from .const import DOMAIN
+
+
+def gateway_identifier(site_id: str) -> Tuple[str, str]:
+    """Liefert die Geräte-Kennung des BEAAM Gateways einer Site.
+
+    Pro Site (= Konfigurationseintrag) gibt es genau ein BEAAM Gateway.
+    """
+    return (DOMAIN, f"beaam_{site_id}")
 
 
 def get_friendly_thing_name(beaam_config: Dict[str, Any], thing_id: str, default_type: str) -> str:
@@ -33,3 +46,31 @@ def get_friendly_thing_name(beaam_config: Dict[str, Any], thing_id: str, default
 
     # 3. Fallback auf den (lesbar gemachten) technischen Typen
     return default_type.replace("_", " ").title()
+
+
+def is_generic_thing(thing_data: Dict[str, Any]) -> bool:
+    """Prüft, ob ein Gerät (Thing) ein Generic Device ist.
+
+    Nur Generic Devices nehmen Werte per State-Ingest an. Ihr Typ enthält
+    "generic" (Groß-/Kleinschreibung wird ignoriert).
+    """
+    return "GENERIC" in str(thing_data.get("type") or "").upper()
+
+
+def is_ingest_entity_wanted(
+    hass: HomeAssistant, platform: str, unique_id: str, thing_data: Dict[str, Any]
+) -> bool:
+    """Entscheidet, ob für einen Datenpunkt eine Ingest-Entität angelegt wird.
+
+    Angelegt wird sie für Generic Devices sowie für bestehende Ingest-Entitäten,
+    die der Benutzer selbst aktiviert hat (damit keine Automationen brechen).
+    """
+    if is_generic_thing(thing_data):
+        return True
+
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id(platform, DOMAIN, unique_id)
+    if entity_id is None:
+        return False
+    entry = registry.async_get(entity_id)
+    return entry is not None and entry.disabled_by is None

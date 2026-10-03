@@ -95,7 +95,11 @@ If you want to participate in beta tests:
 3. Search for **neoom AI** in the list.
 4. Enter the required credentials (Token, Site ID, IP, and Key) and save.
 
-After successful setup, your devices and entities will appear automatically.
+After successful setup, your devices and entities will appear automatically. New devices added to your neoom system are picked up within an hour, without a restart.
+
+**Multiple sites:** Each site (with its BEAAM Gateway) is set up as its own integration entry. Simply add the integration again and select the next site; sites that are already set up are not offered again.
+
+Access data (token, IP, key) can be changed later via the gear icon, **Reconfigure**, or the re-authentication prompt.
 
 ---
 
@@ -237,7 +241,11 @@ Falls Sie an Beta-Tests teilnehmen möchten:
 3. Suchen Sie in der Liste nach **neoom AI**.
 4. Geben Sie die erforderlichen Daten (Token, Site ID, IP und Key) in das Formular ein und speichern Sie.
 
-Nach erfolgreicher Einrichtung tauchen Ihre Geräte und Entitäten automatisch auf.
+Nach erfolgreicher Einrichtung tauchen Ihre Geräte und Entitäten automatisch auf. Neue Geräte in Ihrem neoom-System werden innerhalb einer Stunde ohne Neustart erkannt.
+
+**Mehrere Standorte:** Jeder Standort (Site) mit seinem BEAAM Gateway wird als eigener Integrationseintrag eingerichtet. Fügen Sie die Integration einfach erneut hinzu und wählen Sie den nächsten Standort; bereits eingerichtete Standorte werden nicht mehr angeboten.
+
+Zugangsdaten (Token, IP, Key) können später über das Zahnrad, **Neu konfigurieren** oder die Aufforderung zur erneuten Anmeldung geändert werden.
 
 ---
 

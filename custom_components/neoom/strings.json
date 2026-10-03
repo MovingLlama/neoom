@@ -43,7 +43,8 @@
     "abort": {
       "reauth_successful": "Re-authentication was successful",
       "reconfigure_successful": "Re-configuration was successful",
-      "already_configured": "Device is already configured"
+      "already_configured": "Device is already configured",
+      "all_sites_configured": "All sites of this account are already set up"
     }
   },
   "options": {

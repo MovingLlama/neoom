@@ -43,8 +43,10 @@ class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     durchlaufen muss, um die Integration zu konfigurieren oder zu reauthentifizieren.
     """
 
-    # Version des Konfigurationsschemas. Nützlich für zukünftige Migrationen.
-    VERSION = 1
+    # Version des Konfigurationsschemas. Migrationen siehe async_migrate_entry in __init__.py.
+    # Version 2: Zugangsdaten liegen nur noch in entry.data, nicht mehr in entry.options,
+    # und das BEAAM Gateway-Gerät hat die Kennung "beaam_<site_id>".
+    VERSION = 2
 
     def __init__(self) -> None:
         """Initialisierung des Config Flows."""
@@ -69,6 +71,9 @@ class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Bereinige die IP-Adresse
             user_input[CONF_BEAAM_IP] = _clean_ip(user_input[CONF_BEAAM_IP])
             self.user_data = user_input
+
+            # Pro Site gibt es genau ein BEAAM Gateway; dasselbe Gateway darf nicht doppelt eingebunden werden
+            self._async_abort_entries_match({CONF_BEAAM_IP: user_input[CONF_BEAAM_IP]})
             
             token = user_input[CONF_CLOUD_TOKEN]
             beaam_ip = user_input[CONF_BEAAM_IP]
@@ -127,6 +132,13 @@ class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         errors["base"] = "cannot_connect"
 
             if not errors and self.sites_dict:
+                # Bereits eingebundene Sites nicht erneut anbieten (eine Instanz pro Site)
+                configured_sites = {entry.unique_id for entry in self._async_current_entries()}
+                self.sites_dict = {
+                    site_id: name for site_id, name in self.sites_dict.items() if site_id not in configured_sites
+                }
+                if not self.sites_dict:
+                    return self.async_abort(reason="all_sites_configured")
                 return await self.async_step_site_selection()
 
         # Schema für das Eingabeformular in der UI definieren.
@@ -305,9 +317,9 @@ class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                 )
 
-        current_token = reconfigure_entry.options.get(CONF_CLOUD_TOKEN, reconfigure_entry.data.get(CONF_CLOUD_TOKEN, ""))
-        current_ip = reconfigure_entry.options.get(CONF_BEAAM_IP, reconfigure_entry.data.get(CONF_BEAAM_IP, ""))
-        current_key = reconfigure_entry.options.get(CONF_BEAAM_KEY, reconfigure_entry.data.get(CONF_BEAAM_KEY, ""))
+        current_token = reconfigure_entry.data.get(CONF_CLOUD_TOKEN, "")
+        current_ip = reconfigure_entry.data.get(CONF_BEAAM_IP, "")
+        current_key = reconfigure_entry.data.get(CONF_BEAAM_KEY, "")
 
         data_schema = vol.Schema(
             {
@@ -351,7 +363,7 @@ class NeoomOptionsFlowHandler(config_entries.OptionsFlow):
             session = async_get_clientsession(self.hass)
 
             # Optionale Validierung bei geänderten Zugangsdaten
-            if token and (token != self.config_entry.options.get(CONF_CLOUD_TOKEN, self.config_entry.data.get(CONF_CLOUD_TOKEN))):
+            if token and token != self.config_entry.data.get(CONF_CLOUD_TOKEN):
                 try:
                     url_site = f"{CLOUD_API_URL}/sites/{site_id}" if site_id else f"{CLOUD_API_URL}/sites"
                     async with asyncio.timeout(10):
@@ -365,8 +377,8 @@ class NeoomOptionsFlowHandler(config_entries.OptionsFlow):
                     errors["base"] = "cannot_connect"
 
             if not errors and (ip or key):
-                check_ip = ip or self.config_entry.options.get(CONF_BEAAM_IP, self.config_entry.data.get(CONF_BEAAM_IP))
-                check_key = key or self.config_entry.options.get(CONF_BEAAM_KEY, self.config_entry.data.get(CONF_BEAAM_KEY))
+                check_ip = ip or self.config_entry.data.get(CONF_BEAAM_IP)
+                check_key = key or self.config_entry.data.get(CONF_BEAAM_KEY)
                 try:
                     url_beaam = f"http://{check_ip}/api/v1/site/configuration"
                     async with asyncio.timeout(10):
@@ -380,9 +392,26 @@ class NeoomOptionsFlowHandler(config_entries.OptionsFlow):
                     errors["base"] = "cannot_connect"
 
             if not errors:
-                return self.async_create_entry(title="", data=user_input)
+                # Zugangsdaten gehören nach entry.data (dieselbe Stelle wie bei Reauth/Reconfigure),
+                # in entry.options landen nur die Aktualisierungsintervalle.
+                new_data = {
+                    **self.config_entry.data,
+                    CONF_CLOUD_TOKEN: token or self.config_entry.data.get(CONF_CLOUD_TOKEN, ""),
+                    CONF_BEAAM_IP: ip or self.config_entry.data.get(CONF_BEAAM_IP, ""),
+                    CONF_BEAAM_KEY: key or self.config_entry.data.get(CONF_BEAAM_KEY, ""),
+                }
+                if new_data != dict(self.config_entry.data):
+                    self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
 
-        # Aktuelle Werte aus options (mit Fallback auf data bzw. Defaults) laden
+                return self.async_create_entry(
+                    title="",
+                    data={
+                        CONF_SCAN_INTERVAL_LOCAL: user_input[CONF_SCAN_INTERVAL_LOCAL],
+                        CONF_SCAN_INTERVAL_CLOUD: user_input[CONF_SCAN_INTERVAL_CLOUD],
+                    },
+                )
+
+        # Intervalle aus options, Zugangsdaten aus data laden
         curr_local_interval = self.config_entry.options.get(
             CONF_SCAN_INTERVAL_LOCAL,
             self.config_entry.data.get(CONF_SCAN_INTERVAL_LOCAL, DEFAULT_SCAN_INTERVAL_LOCAL),
@@ -391,18 +420,9 @@ class NeoomOptionsFlowHandler(config_entries.OptionsFlow):
             CONF_SCAN_INTERVAL_CLOUD,
             self.config_entry.data.get(CONF_SCAN_INTERVAL_CLOUD, DEFAULT_SCAN_INTERVAL_CLOUD),
         )
-        curr_beaam_ip = self.config_entry.options.get(
-            CONF_BEAAM_IP,
-            self.config_entry.data.get(CONF_BEAAM_IP, ""),
-        )
-        curr_beaam_key = self.config_entry.options.get(
-            CONF_BEAAM_KEY,
-            self.config_entry.data.get(CONF_BEAAM_KEY, ""),
-        )
-        curr_cloud_token = self.config_entry.options.get(
-            CONF_CLOUD_TOKEN,
-            self.config_entry.data.get(CONF_CLOUD_TOKEN, ""),
-        )
+        curr_beaam_ip = self.config_entry.data.get(CONF_BEAAM_IP, "")
+        curr_beaam_key = self.config_entry.data.get(CONF_BEAAM_KEY, "")
+        curr_cloud_token = self.config_entry.data.get(CONF_CLOUD_TOKEN, "")
 
         options_schema = vol.Schema(
             {

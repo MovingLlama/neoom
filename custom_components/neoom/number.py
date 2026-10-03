@@ -25,7 +25,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, LOGGER
 from .coordinator import NeoomLocalCoordinator
-from .helpers import get_friendly_thing_name
+from .helpers import get_friendly_thing_name, is_ingest_entity_wanted
 
 # Diese Schlüssel werden konsequent ignoriert, auch wenn die API sie als "controllable" (steuerbar) markiert.
 # Grund: Oft sind diese Werte kritisch für das Batteriemanagementsystem oder 
@@ -101,9 +101,9 @@ async def async_setup_entry(
                                 )
                             )
                     else:
-                        # Wenn nicht steuerbar, legen wir eine Ingest-Entität an (standardmäßig deaktiviert)
+                        # Wenn nicht steuerbar, legen wir für Generic Devices eine Ingest-Entität an (standardmäßig deaktiviert)
                         uid = f"{thing_id}_{dp_id}_ingest"
-                        if uid not in known_number_ids:
+                        if uid not in known_number_ids and is_ingest_entity_wanted(hass, "number", uid, thing_data):
                             known_number_ids.add(uid)
                             new_entities.append(
                                 NeoomIngestNumber(
@@ -283,7 +283,7 @@ class NeoomLocalNumber(CoordinatorEntity, NumberEntity):
             name=f"neoom {getattr(self, '_friendly_thing_name', self._thing_type)}",
             manufacturer="neoom",
             model=self._thing_type,
-            via_device=(DOMAIN, "BEAAM Gateway"),
+            via_device=self.coordinator.gateway_identifier,
         )
 
 class NeoomIngestNumber(NeoomLocalNumber):
@@ -408,6 +408,6 @@ class NeoomSettingNumber(CoordinatorEntity, NumberEntity):
             name=f"neoom {getattr(self, '_friendly_thing_name', self._thing_type)}",
             manufacturer="neoom",
             model=self._thing_type,
-            via_device=(DOMAIN, "BEAAM Gateway"),
+            via_device=self.coordinator.gateway_identifier,
         )
 
