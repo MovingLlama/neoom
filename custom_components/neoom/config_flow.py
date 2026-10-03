@@ -44,7 +44,8 @@ class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """
 
     # Version des Konfigurationsschemas. Migrationen siehe async_migrate_entry in __init__.py.
-    # Version 2: Zugangsdaten liegen nur noch in entry.data, nicht mehr in entry.options.
+    # Version 2: Zugangsdaten liegen nur noch in entry.data, nicht mehr in entry.options,
+    # und das BEAAM Gateway-Gerät hat die Kennung "beaam_<site_id>".
     VERSION = 2
 
     def __init__(self) -> None:
@@ -70,6 +71,9 @@ class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Bereinige die IP-Adresse
             user_input[CONF_BEAAM_IP] = _clean_ip(user_input[CONF_BEAAM_IP])
             self.user_data = user_input
+
+            # Pro Site gibt es genau ein BEAAM Gateway; dasselbe Gateway darf nicht doppelt eingebunden werden
+            self._async_abort_entries_match({CONF_BEAAM_IP: user_input[CONF_BEAAM_IP]})
             
             token = user_input[CONF_CLOUD_TOKEN]
             beaam_ip = user_input[CONF_BEAAM_IP]
@@ -128,6 +132,13 @@ class NeoomConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         errors["base"] = "cannot_connect"
 
             if not errors and self.sites_dict:
+                # Bereits eingebundene Sites nicht erneut anbieten (eine Instanz pro Site)
+                configured_sites = {entry.unique_id for entry in self._async_current_entries()}
+                self.sites_dict = {
+                    site_id: name for site_id, name in self.sites_dict.items() if site_id not in configured_sites
+                }
+                if not self.sites_dict:
+                    return self.async_abort(reason="all_sites_configured")
                 return await self.async_step_site_selection()
 
         # Schema für das Eingabeformular in der UI definieren.

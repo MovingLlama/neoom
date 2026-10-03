@@ -1,11 +1,19 @@
 """Hilfsfunktionen für die neoom AI Integration."""
 
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
+
+
+def gateway_identifier(site_id: str) -> Tuple[str, str]:
+    """Liefert die Geräte-Kennung des BEAAM Gateways einer Site.
+
+    Pro Site (= Konfigurationseintrag) gibt es genau ein BEAAM Gateway.
+    """
+    return (DOMAIN, f"beaam_{site_id}")
 
 
 def get_friendly_thing_name(beaam_config: Dict[str, Any], thing_id: str, default_type: str) -> str:

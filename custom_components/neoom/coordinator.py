@@ -30,6 +30,7 @@ from .const import (
     DOMAIN,
     LOGGER,
 )
+from .helpers import gateway_identifier
 
 
 class NeoomCloudCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
@@ -130,6 +131,7 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         hass: HomeAssistant,
         ip: str,
         key: str,
+        site_id: str,
         scan_interval: int = DEFAULT_SCAN_INTERVAL_LOCAL,
     ) -> None:
         """Initialisiert den lokalen Koordinator.
@@ -137,6 +139,7 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         Args:
             hass: Die Home Assistant Instanz.
             ip: Die IP-Adresse des lokalen BEAAM Gateways.
+            site_id: Die Site, zu der dieses Gateway gehört.
             key: Der Local-API-Key für die Authentifizierung.
             scan_interval: Aktualisierungsintervall in Sekunden.
         """
@@ -149,6 +152,8 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         )
         self.ip = ip
         self.key = key
+        # Geräte-Kennung des Gateways; alle Things verweisen per via_device darauf
+        self.gateway_identifier = gateway_identifier(site_id)
         self.session = async_get_clientsession(hass)
         
         # Speichert die Konfiguration des Gateways. Die Struktur der angebundenen Geräte

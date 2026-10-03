@@ -158,5 +158,5 @@ class NeoomSettingTime(CoordinatorEntity, TimeEntity):
             name=f"neoom {getattr(self, '_friendly_thing_name', self._thing_type)}",
             manufacturer="neoom",
             model=self._thing_type,
-            via_device=(DOMAIN, "BEAAM Gateway"),
+            via_device=self.coordinator.gateway_identifier,
         )

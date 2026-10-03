@@ -12,7 +12,6 @@ from custom_components.neoom.const import (
 
 SITE_ID = "site-1"
 BEAAM_IP = "192.0.2.10"
-LOCAL_URL = f"http://{BEAAM_IP}/api/v1"
 
 ENTRY_DATA = {
     CONF_CLOUD_TOKEN: "cloud-token",
@@ -21,13 +20,16 @@ ENTRY_DATA = {
     CONF_SITE_ID: SITE_ID,
 }
 
+SITE_ID_2 = "site-2"
+BEAAM_IP_2 = "192.0.2.20"
+
 INVERTER_ID = "inverter-1"
 GENERIC_ID = "generic-1"
 
 
-def make_beaam_config(extra_things: dict | None = None) -> dict:
+def make_beaam_config(extra_things: dict | None = None, include_defaults: bool = True) -> dict:
     """Erzeugt eine minimale BEAAM-Gerätestruktur."""
-    things = {
+    things = {} if not include_defaults else {
         INVERTER_ID: {
             "type": "INVERTER",
             "name": "Wechselrichter",
@@ -57,20 +59,21 @@ def make_beaam_config(extra_things: dict | None = None) -> dict:
     return {"things": things, "siteInfo": {}}
 
 
-def mock_apis(aioclient_mock, beaam_config: dict) -> None:
-    """Registriert Antworten für Cloud- und lokale API."""
-    aioclient_mock.get(f"{CLOUD_API_URL}/sites/{SITE_ID}", json={"electricity_price": 0.2})
+def mock_apis(aioclient_mock, beaam_config: dict, site_id: str = SITE_ID, beaam_ip: str = BEAAM_IP) -> None:
+    """Registriert Antworten für Cloud- und lokale API einer Site."""
+    local_url = f"http://{beaam_ip}/api/v1"
+    aioclient_mock.get(f"{CLOUD_API_URL}/sites/{site_id}", json={"electricity_price": 0.2})
     aioclient_mock.get(
-        f"{CLOUD_API_URL}/sites/{SITE_ID}/energy-flow/latest", json={"gateways_online_state": "ONLINE"}
+        f"{CLOUD_API_URL}/sites/{site_id}/energy-flow/latest", json={"gateways_online_state": "ONLINE"}
     )
-    aioclient_mock.get(f"{LOCAL_URL}/site/configuration", json=beaam_config)
-    aioclient_mock.get(f"{LOCAL_URL}/site/state", json={"energyFlow": {"states": []}})
+    aioclient_mock.get(f"{local_url}/site/configuration", json=beaam_config)
+    aioclient_mock.get(f"{local_url}/site/state", json={"energyFlow": {"states": []}})
     for thing_id in beaam_config["things"]:
         aioclient_mock.get(
-            f"{LOCAL_URL}/things/{thing_id}/states",
+            f"{local_url}/things/{thing_id}/states",
             json={"states": [{"dataPointId": f"dp-{thing_id}", "key": "POWER", "value": 100}]},
         )
-        aioclient_mock.get(f"{LOCAL_URL}/things/{thing_id}/settings", json={"settings": []})
+        aioclient_mock.get(f"{local_url}/things/{thing_id}/settings", json={"settings": []})
 
 
 @pytest.fixture(autouse=True)

@@ -31,7 +31,7 @@ from .const import (
     LOGGER,
 )
 from .coordinator import NeoomCloudCoordinator, NeoomLocalCoordinator
-from .helpers import is_generic_thing
+from .helpers import gateway_identifier, is_generic_thing
 
 # Definiere die unterstützten Plattformen, die von dieser Integration geladen werden.
 # Wir unterstützen Sensoren (nur-lesen), Number-Entitäten (Zahleneingabe/Slider),
@@ -58,7 +58,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Zugangsdaten liegen ausschließlich in entry.data, Intervalle in entry.options
     cloud_token = entry.data.get(CONF_CLOUD_TOKEN, "")
-    site_id = entry.data.get(CONF_SITE_ID, "")
+    site_id = entry.data.get(CONF_SITE_ID) or entry.entry_id
     beaam_ip = entry.data.get(CONF_BEAAM_IP, "")
     beaam_key = entry.data.get(CONF_BEAAM_KEY, "")
     scan_interval_cloud = entry.options.get(CONF_SCAN_INTERVAL_CLOUD, DEFAULT_SCAN_INTERVAL_CLOUD)
@@ -79,6 +79,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass,
         ip=beaam_ip,
         key=beaam_key,
+        site_id=site_id,
         scan_interval=scan_interval_local,
     )
 
@@ -115,13 +116,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Dies ist wichtig, da spätere Geräte (z.B. Wechselrichter, Batterie) über das Attribut
     # 'via_device' eine Verbindung aufbauen, um anzuzeigen, dass sie *über* das BEAAM Gerät kommunizieren.
     # Wenn das BEAAM-Gerät hier nicht existiert, warnt Home Assistant, dass ein ungültiges via_device
-    # angegeben wurde.
+    # angegeben wurde. Pro Site (= Konfigurationseintrag) gibt es genau ein Gateway.
     device_registry = dr.async_get(hass)
     device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
-        identifiers={(DOMAIN, "BEAAM Gateway"), (DOMAIN, f"beaam_{entry.data.get(CONF_SITE_ID, entry.entry_id)}")},
+        identifiers={gateway_identifier(site_id)},
         manufacturer="neoom",
-        name="BEAAM Gateway",
+        name=f"BEAAM Gateway ({entry.title})",
         model="BEAAM Edge Controller",
         configuration_url=f"http://{beaam_ip}",
     )
@@ -215,9 +216,12 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migriert Konfigurationseinträge älterer Versionen.
 
-    Version 1 → 2: Zugangsdaten (Token, IP, Key) konnten über das Zahnrad in
-    entry.options landen und überschrieben dort die Werte aus Reauth/Reconfigure.
-    Sie werden nach entry.data verschoben, sodass sie nur noch an einer Stelle liegen.
+    Version 1 → 2:
+    - Zugangsdaten (Token, IP, Key) konnten über das Zahnrad in entry.options landen
+      und überschrieben dort die Werte aus Reauth/Reconfigure. Sie werden nach
+      entry.data verschoben, sodass sie nur noch an einer Stelle liegen.
+    - Das BEAAM Gateway hatte die feste Kennung "BEAAM Gateway", wodurch die Gateways
+      mehrerer Sites zu einem Gerät verschmolzen. Es behält nur noch "beaam_<site_id>".
     """
     LOGGER.debug("Migriere neoom AI Eintrag von Version %s", entry.version)
 
@@ -235,12 +239,45 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 new_data[conf_key] = new_options[conf_key]
             new_options.pop(conf_key, None)
 
+        _async_migrate_gateway_device(hass, entry)
+
         hass.config_entries.async_update_entry(
             entry, data=new_data, options=new_options, version=2
         )
         LOGGER.info("neoom AI Eintrag %s auf Version 2 migriert.", entry.entry_id)
 
     return True
+
+
+def _async_migrate_gateway_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Stellt das Gateway-Gerät von der festen Kennung auf "beaam_<site_id>" um.
+
+    Gehört das alte Gerät nur zu diesem Eintrag, wird lediglich die Kennung getauscht
+    (Gerät, Bereich und Name bleiben erhalten). Teilen sich mehrere Einträge das Gerät,
+    wird dieser Eintrag abgekoppelt und erhält beim Setup ein eigenes Gateway-Gerät.
+    """
+    device_registry = dr.async_get(hass)
+    legacy_device = device_registry.async_get_device(identifiers={(DOMAIN, "BEAAM Gateway")})
+    if legacy_device is None or entry.entry_id not in legacy_device.config_entries:
+        return
+
+    own_identifier = gateway_identifier(entry.data.get(CONF_SITE_ID) or entry.entry_id)
+
+    if legacy_device.config_entries == {entry.entry_id}:
+        device_registry.async_update_device(legacy_device.id, new_identifiers={own_identifier})
+        LOGGER.info("BEAAM Gateway Gerät auf Kennung %s umgestellt.", own_identifier[1])
+        return
+
+    device_registry.async_update_device(
+        legacy_device.id,
+        new_identifiers=legacy_device.identifiers - {own_identifier},
+        remove_config_entry_id=entry.entry_id,
+    )
+    LOGGER.warning(
+        "Das BEAAM Gateway Gerät wurde von mehreren Sites geteilt. Eintrag %s erhält ein eigenes Gerät; "
+        "Bereich und Zuordnungen bitte prüfen.",
+        entry.title,
+    )
 
 
 async def async_remove_config_entry_device(
@@ -253,8 +290,8 @@ async def async_remove_config_entry_device(
 
     local_coordinator: NeoomLocalCoordinator = data["local"]
     known_things = (local_coordinator.beaam_config or {}).get("things", {})
-    site_id = entry.data.get(CONF_SITE_ID, entry.entry_id)
-    protected_ids = {"BEAAM Gateway", f"beaam_{site_id}", site_id}
+    site_id = entry.data.get(CONF_SITE_ID) or entry.entry_id
+    protected_ids = {gateway_identifier(site_id)[1], site_id}
 
     for domain, identifier in device_entry.identifiers:
         if domain != DOMAIN:
