@@ -497,7 +497,7 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
             async with asyncio.timeout(10):
                 async with self.session.put(url, headers=headers, json=payload) as resp:
                     response_text = await resp.text()
-                    LOGGER.info("BEAAM Antwort erhalten (Status: %s): %s", resp.status, response_text)
+                    LOGGER.debug("BEAAM Antwort erhalten (Status: %s): %s", resp.status, response_text)
                     resp.raise_for_status()
                     LOGGER.info("Einstellung an BEAAM erfolgreich gesendet: %s -> %s", key, api_value)
                     

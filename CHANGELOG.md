@@ -10,6 +10,8 @@
 - Auch nach Befehlen und `neoom.ingest_state` zählt der Abgleich nicht mehr zum Timeout des Sendens.
 
 ### Verbessert
+- Der Antworttext des Gateways nach einer Einstellungsänderung steht nur noch im Debug-Log statt bei jeder Änderung im normalen Log.
+- Hinweis in README und Einrichtungsdialog: Die lokale BEAAM-API ist unverschlüsseltes HTTP (das BEAAM bietet kein HTTPS an); die Integration nur im vertrauenswürdigen lokalen Netz verwenden und den BEAAM-Port nicht ins Internet freigeben.
 - **Einstellungen werden über eine feste Tabelle zugeordnet.** Bekannte Einstellungen bekommen passende Einheiten: Schwellwerte der Wärmepumpe (`POWER_THRESHOLD_*`) in W, Sperr- und Anlaufzeit (`LOCK_TIME`, `RAMP_UP_TIME`) in Sekunden. Einstellungen, die das Gateway neu meldet und die die Integration noch nicht kennt, werden weiterhin anhand ihres Werts erkannt, aber standardmäßig deaktiviert angelegt; sie lassen sich in den Entitäts-Einstellungen aktivieren. Bereits vorhandene Entitäten bleiben aktiv. Jede Einstellung erzeugt nur noch eine Entität (bisher konnte z. B. ein Schlüssel mit „POWER“ und dem Wert `true` gleichzeitig Schalter und Zahl werden).
 - Neu in der Tabelle laut offizieller BEAAM-API-Doku: Einspeise-Priorisierung (`GRID_FEED_IN_PRIORITIZATION_ENABLED` als Schalter, `GRID_FEED_IN_PRIORITIZATION_POWER` in W). Einstellungen, deren Wert das Gateway als echten Boolean statt als Text `"true"`/`"false"` liefert, werden jetzt ebenfalls als Schalter erkannt.
 - States und Einstellungen aller Geräte werden in einer gemeinsamen Runde parallel vom Gateway abgefragt statt in zwei Runden nacheinander. Ein Abfragezyklus dauert dadurch etwa halb so lang.

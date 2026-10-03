@@ -101,6 +101,8 @@ After successful setup, your devices and entities will appear automatically. New
 
 Access data (token, IP, key) can be changed later via the gear icon, **Reconfigure**, or the re-authentication prompt.
 
+**Security note:** The BEAAM local API only offers unencrypted HTTP. The BEAAM API key and all values are sent in plain text on your network. Only use the integration within your trusted local network (ideally a separate VLAN for energy devices), and never forward the BEAAM's port to the internet. The neoom AI Cloud connection uses HTTPS.
+
 ---
 
 ### 📊 Supported Hardware & Sensors (Excerpt)
@@ -250,6 +252,8 @@ Nach erfolgreicher Einrichtung tauchen Ihre Geräte und Entitäten automatisch a
 **Mehrere Standorte:** Jeder Standort (Site) mit seinem BEAAM Gateway wird als eigener Integrationseintrag eingerichtet. Fügen Sie die Integration einfach erneut hinzu und wählen Sie den nächsten Standort; bereits eingerichtete Standorte werden nicht mehr angeboten.
 
 Zugangsdaten (Token, IP, Key) können später über das Zahnrad, **Neu konfigurieren** oder die Aufforderung zur erneuten Anmeldung geändert werden.
+
+**Sicherheitshinweis:** Die lokale API des BEAAM bietet nur unverschlüsseltes HTTP an. Der BEAAM API Key und alle Werte gehen im Klartext durch Ihr Netzwerk. Verwenden Sie die Integration nur in Ihrem vertrauenswürdigen lokalen Netz (idealerweise einem eigenen VLAN für Energiegeräte) und geben Sie den Port des BEAAM niemals ins Internet frei. Die Verbindung zur neoom AI Cloud nutzt HTTPS.
 
 ---
 
