@@ -2,14 +2,13 @@
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.neoom.const import DOMAIN
 
-from .conftest import ENTRY_DATA, SITE_ID, make_beaam_config, mock_apis
+from .conftest import ENTRY_DATA, SITE_ID, get_device, make_beaam_config, mock_apis
 
 BATTERY_ID = "battery-1"
 BATTERY_THING = {
@@ -107,7 +106,7 @@ async def test_energy_flow_sensors_on_gateway(hass: HomeAssistant, aioclient_moc
     assert soc.attributes["device_class"] == SensorDeviceClass.BATTERY
 
     entity = er.async_get(hass).async_get(consumption_id)
-    gateway = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, f"beaam_{SITE_ID}")})
+    gateway = get_device(hass, (DOMAIN, f"beaam_{SITE_ID}"), entity.config_entry_id)
     assert entity.device_id == gateway.id
 
 

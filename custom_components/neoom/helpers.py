@@ -3,9 +3,14 @@
 from typing import Any, Dict, Tuple
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
+
+# Ab HA 2026.8 verweist DeviceInfo über die Registry-ID (via_device_id) auf das übergeordnete
+# Gerät. Die Kennung über via_device ist veraltet und wird mit HA 2027.8 entfernt.
+SUPPORTS_VIA_DEVICE_ID = "via_device_id" in dr.DeviceInfo.__annotations__
 
 
 def gateway_identifier(site_id: str) -> Tuple[str, str]:

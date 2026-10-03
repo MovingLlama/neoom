@@ -1,6 +1,8 @@
 """Gemeinsame Fixtures für die neoom Tests."""
 
 import pytest
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 
 from custom_components.neoom.const import (
     CLOUD_API_URL,
@@ -25,6 +27,24 @@ BEAAM_IP_2 = "192.0.2.20"
 
 INVERTER_ID = "inverter-1"
 GENERIC_ID = "generic-1"
+
+# Ab HA 2026.8 gehört jedes Gerät genau einem Config-Eintrag (Abfrage pro Eintrag)
+SINGLE_ENTRY_DEVICES = hasattr(dr.DeviceRegistry, "async_get_device_by_identifier")
+
+
+def get_device(hass: HomeAssistant, identifier: tuple[str, str], entry_id: str) -> dr.DeviceEntry | None:
+    """Sucht ein Gerät über seine Kennung, passend zur HA-Version."""
+    registry = dr.async_get(hass)
+    if SINGLE_ENTRY_DEVICES:
+        return registry.async_get_device_by_identifier(identifier, entry_id)
+    return registry.async_get_device(identifiers={identifier})
+
+
+def device_entry_ids(device: dr.DeviceEntry) -> set[str]:
+    """Config-Einträge eines Geräts, passend zur HA-Version."""
+    if SINGLE_ENTRY_DEVICES:
+        return {device.config_entry_id}
+    return device.config_entries
 
 
 def make_beaam_config(extra_things: dict | None = None, include_defaults: bool = True) -> dict:
