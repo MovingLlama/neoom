@@ -21,7 +21,10 @@ from .conftest import (
     ENTRY_DATA,
     GENERIC_ID,
     SITE_ID,
+    SINGLE_ENTRY_DEVICES,
     SITE_ID_2,
+    device_entry_ids,
+    get_device,
     make_beaam_config,
     mock_apis,
 )
@@ -49,10 +52,9 @@ def _mock_two_sites(aioclient_mock) -> None:
     )
 
 
-def _thing_parent(hass: HomeAssistant, thing_id: str) -> dr.DeviceEntry:
-    registry = dr.async_get(hass)
-    thing = registry.async_get_device(identifiers={(DOMAIN, thing_id)})
-    return registry.async_get(thing.via_device_id)
+def _thing_parent(hass: HomeAssistant, thing_id: str, entry_id: str) -> dr.DeviceEntry:
+    thing = get_device(hass, (DOMAIN, thing_id), entry_id)
+    return dr.async_get(hass).async_get(thing.via_device_id)
 
 
 async def test_two_sites_get_separate_gateways(hass: HomeAssistant, aioclient_mock) -> None:
@@ -65,17 +67,17 @@ async def test_two_sites_get_separate_gateways(hass: HomeAssistant, aioclient_mo
     assert await async_setup_component(hass, DOMAIN, {})
     await hass.async_block_till_done()
 
-    registry = dr.async_get(hass)
-    gateway_1 = registry.async_get_device(identifiers={(DOMAIN, f"beaam_{SITE_ID}")})
-    gateway_2 = registry.async_get_device(identifiers={(DOMAIN, f"beaam_{SITE_ID_2}")})
+    gateway_1 = get_device(hass, (DOMAIN, f"beaam_{SITE_ID}"), entry_1.entry_id)
+    gateway_2 = get_device(hass, (DOMAIN, f"beaam_{SITE_ID_2}"), entry_2.entry_id)
 
     assert gateway_1.id != gateway_2.id
-    assert gateway_1.config_entries == {entry_1.entry_id}
-    assert gateway_2.config_entries == {entry_2.entry_id}
+    assert device_entry_ids(gateway_1) == {entry_1.entry_id}
+    assert device_entry_ids(gateway_2) == {entry_2.entry_id}
     assert gateway_1.name == "BEAAM Gateway (Haus)"
-    assert registry.async_get_device(identifiers={LEGACY_ID}) is None
-    assert _thing_parent(hass, GENERIC_ID).id == gateway_1.id
-    assert _thing_parent(hass, "meter-2").id == gateway_2.id
+    assert get_device(hass, LEGACY_ID, entry_1.entry_id) is None
+    assert get_device(hass, LEGACY_ID, entry_2.entry_id) is None
+    assert _thing_parent(hass, GENERIC_ID, entry_1.entry_id).id == gateway_1.id
+    assert _thing_parent(hass, "meter-2", entry_2.entry_id).id == gateway_2.id
 
 
 async def test_migration_keeps_single_gateway_device(hass: HomeAssistant, aioclient_mock) -> None:
@@ -98,7 +100,7 @@ async def test_migration_keeps_single_gateway_device(hass: HomeAssistant, aiocli
     migrated = registry.async_get(legacy.id)
     assert migrated.identifiers == {(DOMAIN, f"beaam_{SITE_ID}")}
     assert migrated.area_id == "technikraum"
-    assert _thing_parent(hass, GENERIC_ID).id == legacy.id
+    assert _thing_parent(hass, GENERIC_ID, entry.entry_id).id == legacy.id
 
 
 async def test_migration_splits_shared_gateway_device(hass: HomeAssistant, aioclient_mock) -> None:
@@ -120,21 +122,23 @@ async def test_migration_splits_shared_gateway_device(hass: HomeAssistant, aiocl
         identifiers={LEGACY_ID, (DOMAIN, f"beaam_{SITE_ID_2}")},
         name="BEAAM Gateway",
     )
-    assert legacy.config_entries == {entry_1.entry_id, entry_2.entry_id}
+    if not SINGLE_ENTRY_DEVICES:
+        # Ab HA 2026.8 entstehen hier zwei Geräte, wie nach HAs eigener Aufteilung
+        assert legacy.config_entries == {entry_1.entry_id, entry_2.entry_id}
 
     assert await async_setup_component(hass, DOMAIN, {})
     await hass.async_block_till_done()
 
-    gateway_1 = registry.async_get_device(identifiers={(DOMAIN, f"beaam_{SITE_ID}")})
-    gateway_2 = registry.async_get_device(identifiers={(DOMAIN, f"beaam_{SITE_ID_2}")})
+    gateway_1 = get_device(hass, (DOMAIN, f"beaam_{SITE_ID}"), entry_1.entry_id)
+    gateway_2 = get_device(hass, (DOMAIN, f"beaam_{SITE_ID_2}"), entry_2.entry_id)
     assert gateway_1.id != gateway_2.id
     assert legacy.id in (gateway_1.id, gateway_2.id)
-    assert gateway_1.config_entries == {entry_1.entry_id}
-    assert gateway_2.config_entries == {entry_2.entry_id}
+    assert device_entry_ids(gateway_1) == {entry_1.entry_id}
+    assert device_entry_ids(gateway_2) == {entry_2.entry_id}
     assert gateway_1.identifiers == {(DOMAIN, f"beaam_{SITE_ID}")}
     assert gateway_2.identifiers == {(DOMAIN, f"beaam_{SITE_ID_2}")}
-    assert _thing_parent(hass, GENERIC_ID).id == gateway_1.id
-    assert _thing_parent(hass, "meter-2").id == gateway_2.id
+    assert _thing_parent(hass, GENERIC_ID, entry_1.entry_id).id == gateway_1.id
+    assert _thing_parent(hass, "meter-2", entry_2.entry_id).id == gateway_2.id
 
 
 def _mock_flow_apis(aioclient_mock) -> None:

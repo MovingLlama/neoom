@@ -114,11 +114,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # --- EXPLIZITE GERÄTE-REGISTRIERUNG ---
     # Wir registrieren das BEAAM Gateway vorab im Device Registry von Home Assistant.
     # Dies ist wichtig, da spätere Geräte (z.B. Wechselrichter, Batterie) über das Attribut
-    # 'via_device' eine Verbindung aufbauen, um anzuzeigen, dass sie *über* das BEAAM Gerät kommunizieren.
-    # Wenn das BEAAM-Gerät hier nicht existiert, warnt Home Assistant, dass ein ungültiges via_device
-    # angegeben wurde. Pro Site (= Konfigurationseintrag) gibt es genau ein Gateway.
+    # 'via_device_id' (vor HA 2026.8: 'via_device') eine Verbindung aufbauen, um anzuzeigen, dass sie
+    # *über* das BEAAM Gerät kommunizieren. Dafür muss das Gateway vor den Plattformen existieren.
+    # Pro Site (= Konfigurationseintrag) gibt es genau ein Gateway.
     device_registry = dr.async_get(hass)
-    device_registry.async_get_or_create(
+    gateway_device = device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={gateway_identifier(site_id)},
         manufacturer="neoom",
@@ -126,6 +126,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         model="BEAAM Edge Controller",
         configuration_url=f"http://{beaam_ip}",
     )
+    local_coordinator.gateway_device_id = gateway_device.id
     LOGGER.debug("BEAAM Gateway im Device Registry angelegt oder abgerufen.")
 
     # Ingest-Entitäten früherer Versionen entfernen, die nicht mehr angelegt werden
@@ -257,11 +258,21 @@ def _async_migrate_gateway_device(hass: HomeAssistant, entry: ConfigEntry) -> No
     wird dieser Eintrag abgekoppelt und erhält beim Setup ein eigenes Gateway-Gerät.
     """
     device_registry = dr.async_get(hass)
-    legacy_device = device_registry.async_get_device(identifiers={(DOMAIN, "BEAAM Gateway")})
-    if legacy_device is None or entry.entry_id not in legacy_device.config_entries:
+    legacy_identifier = (DOMAIN, "BEAAM Gateway")
+    own_identifier = gateway_identifier(entry.data.get(CONF_SITE_ID) or entry.entry_id)
+
+    if hasattr(device_registry, "async_get_device_by_identifier"):
+        # Ab HA 2026.8 gehört jedes Gerät genau einem Eintrag; geteilte Geräte hat HA
+        # bereits selbst pro Eintrag aufgeteilt. Es genügt, die Kennung zu tauschen.
+        legacy_device = device_registry.async_get_device_by_identifier(legacy_identifier, entry.entry_id)
+        if legacy_device is not None:
+            device_registry.async_update_device(legacy_device.id, new_identifiers={own_identifier})
+            LOGGER.info("BEAAM Gateway Gerät auf Kennung %s umgestellt.", own_identifier[1])
         return
 
-    own_identifier = gateway_identifier(entry.data.get(CONF_SITE_ID) or entry.entry_id)
+    legacy_device = device_registry.async_get_device(identifiers={legacy_identifier})
+    if legacy_device is None or entry.entry_id not in legacy_device.config_entries:
+        return
 
     if legacy_device.config_entries == {entry.entry_id}:
         device_registry.async_update_device(legacy_device.id, new_identifiers={own_identifier})

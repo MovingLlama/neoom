@@ -241,7 +241,7 @@ class NeoomLocalSelect(CoordinatorEntity, SelectEntity):
             name=f"neoom {getattr(self, '_friendly_thing_name', self._thing_type)}",
             manufacturer="neoom",
             model=self._thing_type,
-            via_device=self.coordinator.gateway_identifier,
+            **self.coordinator.gateway_link,
         )
 
 
@@ -344,5 +344,5 @@ class NeoomSettingSelect(CoordinatorEntity, SelectEntity):
             name=f"neoom {getattr(self, '_friendly_thing_name', self._thing_type)}",
             manufacturer="neoom",
             model=self._thing_type,
-            via_device=self.coordinator.gateway_identifier,
+            **self.coordinator.gateway_link,
         )

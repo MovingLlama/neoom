@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.3
+
+### Behoben
+- Vorbereitung auf Home Assistant 2027.8: Geräte verweisen auf das BEAAM Gateway jetzt über `via_device_id` statt über den veralteten Parameter `via_device`. Die Warnung „calls `device_registry.async_get_or_create` with a deprecated `via_device` parameter“ im Log entfällt. Auf Home Assistant vor 2026.8 wird weiterhin `via_device` verwendet.
+- Die Migration des Gateway-Geräts aus Version 1.0.x nutzt ab Home Assistant 2026.8 die neue Geräte-Abfrage pro Eintrag (`async_get_device_by_identifier`) statt des veralteten `async_get_device`.
+
 ## 1.1.2
 
 ### Behoben

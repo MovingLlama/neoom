@@ -22,6 +22,7 @@ from .conftest import (
     GENERIC_ID,
     INVERTER_ID,
     SITE_ID,
+    get_device,
     make_beaam_config,
     mock_apis,
 )
@@ -165,8 +166,8 @@ async def test_remove_stale_device(hass: HomeAssistant, aioclient_mock) -> None:
     await _setup(hass, entry)
 
     device_registry = dr.async_get(hass)
-    known = device_registry.async_get_device(identifiers={(DOMAIN, GENERIC_ID)})
-    gateway = device_registry.async_get_device(identifiers={(DOMAIN, f"beaam_{SITE_ID}")})
+    known = get_device(hass, (DOMAIN, GENERIC_ID), entry.entry_id)
+    gateway = get_device(hass, (DOMAIN, f"beaam_{SITE_ID}"), entry.entry_id)
     gone = device_registry.async_get_or_create(
         config_entry_id=entry.entry_id, identifiers={(DOMAIN, "removed-thing")}
     )

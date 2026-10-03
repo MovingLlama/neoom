@@ -30,7 +30,7 @@ from .const import (
     DOMAIN,
     LOGGER,
 )
-from .helpers import gateway_identifier
+from .helpers import SUPPORTS_VIA_DEVICE_ID, gateway_identifier
 
 
 class NeoomCloudCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
@@ -152,8 +152,10 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         )
         self.ip = ip
         self.key = key
-        # Geräte-Kennung des Gateways; alle Things verweisen per via_device darauf
+        # Geräte-Kennung des Gateways; alle Things hängen über gateway_link daran
         self.gateway_identifier = gateway_identifier(site_id)
+        # Registry-ID des Gateway-Geräts, wird beim Setup in __init__.py gesetzt
+        self.gateway_device_id: Optional[str] = None
         self.session = async_get_clientsession(hass)
         
         # Speichert die Konfiguration des Gateways. Die Struktur der angebundenen Geräte
@@ -162,6 +164,13 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         self.beaam_config: Optional[Dict[str, Any]] = None
         # Zeitpunkt (time.monotonic), ab dem die Konfiguration neu geladen werden soll.
         self._config_refresh_due: float = 0.0
+
+    @property
+    def gateway_link(self) -> Dict[str, Any]:
+        """DeviceInfo-Felder, die ein Thing mit dem BEAAM Gateway verknüpfen."""
+        if SUPPORTS_VIA_DEVICE_ID and self.gateway_device_id:
+            return {"via_device_id": self.gateway_device_id}
+        return {"via_device": self.gateway_identifier}
 
     async def _ensure_config_loaded(self) -> None:
         """Stellt sicher, dass die Gerätestruktur ("Konfiguration") vom Gateway geladen und aktuell ist.
