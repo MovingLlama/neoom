@@ -7,6 +7,7 @@ Das verhindert, dass jede Entität eigene Netzwerk-Anfragen stellt, was die Syst
 """
 
 import asyncio
+import time
 from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
@@ -22,6 +23,8 @@ from homeassistant.helpers.update_coordinator import (
 
 from .const import (
     CLOUD_API_URL,
+    CONFIG_REFRESH_INTERVAL,
+    CONFIG_RETRY_INTERVAL,
     DEFAULT_SCAN_INTERVAL_CLOUD,
     DEFAULT_SCAN_INTERVAL_LOCAL,
     DOMAIN,
@@ -148,57 +151,73 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         self.key = key
         self.session = async_get_clientsession(hass)
         
-        # Speichert die statische Konfiguration des Gateways,
-        # da sich die Struktur der angebundenen Geräte (Wechselrichter, Speicher) 
-        # selten ändert und nicht bei jedem Zyklus neu geladen werden muss.
+        # Speichert die Konfiguration des Gateways. Die Struktur der angebundenen Geräte
+        # (Wechselrichter, Speicher) ändert sich selten und wird daher nur alle
+        # CONFIG_REFRESH_INTERVAL Sekunden neu geladen, nicht bei jedem Zyklus.
         self.beaam_config: Optional[Dict[str, Any]] = None
+        # Zeitpunkt (time.monotonic), ab dem die Konfiguration neu geladen werden soll.
+        self._config_refresh_due: float = 0.0
 
     async def _ensure_config_loaded(self) -> None:
-        """Stellt sicher, dass die Gerätestruktur ("Konfiguration") vom Gateway geladen wurde.
+        """Stellt sicher, dass die Gerätestruktur ("Konfiguration") vom Gateway geladen und aktuell ist.
         
         Diese Konfiguration enhält Informationen über alle verbundenden Geräte ("Things")
         und ihre verfügbaren Datenpunkte ("DataPoints").
-        Diese Methode ruft die API nur dann auf, wenn `self.beaam_config` noch leer (None) ist.
+        Die API wird beim ersten Aufruf und danach alle CONFIG_REFRESH_INTERVAL Sekunden abgefragt,
+        damit neue Geräte ohne Neustart erkannt werden. Schlägt ein erneutes Laden fehl,
+        bleibt die bisherige Konfiguration erhalten.
         """
-        if self.beaam_config is not None:
-            return  # Konfiguration is bereits geladen
+        now = time.monotonic()
+        if self.beaam_config is not None and now < self._config_refresh_due:
+            return  # Konfiguration ist geladen und noch aktuell
 
-        url = f"http://{self.ip}/api/v1/site/configuration"
-        headers = {"Authorization": f"Bearer {self.key}"}
-        
         try:
-            # Längeres Timeout für den initialen Konfigurationsabruf
-            async with asyncio.timeout(10):
-                async with self.session.get(url, headers=headers) as resp:
-                    if resp.status == 401:
-                        raise ConfigEntryAuthFailed("Lokaler BEAAM API Key ist ungültig oder abgewiesen.")
-                    
-                    resp.raise_for_status()
-                    config = await resp.json()
-                    
-                    # Inject virtual OPERATING_MODE_SG_READY datapoint for HEAT_PUMP things if missing
-                    if config and "things" in config:
-                        for thing_id, thing_data in config["things"].items():
-                            if thing_data and thing_data.get("type") == "HEAT_PUMP":
-                                datapoints = thing_data.setdefault("dataPoints", {})
-                                sg_ready_exists = any(dp.get("key") == "OPERATING_MODE_SG_READY" for dp in datapoints.values())
-                                if not sg_ready_exists:
-                                    virtual_dp_id = f"{thing_id}_operating_mode_sg_ready"
-                                    datapoints[virtual_dp_id] = {
-                                        "key": "OPERATING_MODE_SG_READY",
-                                        "dataType": "STRING",
-                                        "unitOfMeasure": "None",
-                                        "controllable": True
-                                    }
-                                    LOGGER.debug("Injected virtual OPERATING_MODE_SG_READY for HEAT_PUMP: %s", thing_id)
-                    
-                    self.beaam_config = config
-                    LOGGER.debug("BEAAM Konfiguration (Gerätestruktur) erfolgreich geladen.")
+            self.beaam_config = await self._fetch_config()
+            self._config_refresh_due = now + CONFIG_REFRESH_INTERVAL
         except ConfigEntryAuthFailed:
             raise
         except Exception as err:
-            # Wird an die aufrufende Methode (_async_update_data) weitergereicht.
-            raise UpdateFailed(f"Konnte BEAAM Konfiguration nicht laden: {err}") from err
+            if self.beaam_config is None:
+                # Ohne Konfiguration können keine Entitäten angelegt werden.
+                raise UpdateFailed(f"Konnte BEAAM Konfiguration nicht laden: {err}") from err
+            LOGGER.warning(
+                "Neuladen der BEAAM Konfiguration fehlgeschlagen (%s). Verwende bisherige Konfiguration.",
+                err,
+            )
+            self._config_refresh_due = now + CONFIG_RETRY_INTERVAL
+
+    async def _fetch_config(self) -> Dict[str, Any]:
+        """Lädt die Gerätestruktur vom Gateway und ergänzt virtuelle Datenpunkte."""
+        url = f"http://{self.ip}/api/v1/site/configuration"
+        headers = {"Authorization": f"Bearer {self.key}"}
+        
+        # Längeres Timeout für den Konfigurationsabruf
+        async with asyncio.timeout(10):
+            async with self.session.get(url, headers=headers) as resp:
+                if resp.status == 401:
+                    raise ConfigEntryAuthFailed("Lokaler BEAAM API Key ist ungültig oder abgewiesen.")
+                
+                resp.raise_for_status()
+                config = await resp.json()
+                
+        # Inject virtual OPERATING_MODE_SG_READY datapoint for HEAT_PUMP things if missing
+        if config and "things" in config:
+            for thing_id, thing_data in config["things"].items():
+                if thing_data and thing_data.get("type") == "HEAT_PUMP":
+                    datapoints = thing_data.setdefault("dataPoints", {})
+                    sg_ready_exists = any(dp.get("key") == "OPERATING_MODE_SG_READY" for dp in datapoints.values())
+                    if not sg_ready_exists:
+                        virtual_dp_id = f"{thing_id}_operating_mode_sg_ready"
+                        datapoints[virtual_dp_id] = {
+                            "key": "OPERATING_MODE_SG_READY",
+                            "dataType": "STRING",
+                            "unitOfMeasure": "None",
+                            "controllable": True
+                        }
+                        LOGGER.debug("Injected virtual OPERATING_MODE_SG_READY for HEAT_PUMP: %s", thing_id)
+        
+        LOGGER.debug("BEAAM Konfiguration (Gerätestruktur) erfolgreich geladen.")
+        return config
 
     async def _fetch_thing_state(self, thing_id: str, headers: Dict[str, str]) -> Optional[Dict[str, Any]]:
         """Hilfsfunktion: Ruft den detaillierten Status eines einzelnen Geräts ('Thing') auf dem BEAAM ab."""

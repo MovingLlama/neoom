@@ -53,3 +53,13 @@ DEFAULT_SCAN_INTERVAL_CLOUD: int = 300
 # abgerufen werden. Ein kurzer Intervall ist wichtig für Live-Energieflüsse.
 DEFAULT_SCAN_INTERVAL_LOCAL: int = 15
 
+
+# Intervall in Sekunden, nach dem die Gerätestruktur (site/configuration) neu geladen wird,
+# damit neu angelegte Geräte im neoom-System ohne Neustart erkannt werden.
+CONFIG_REFRESH_INTERVAL: int = 3600
+
+# Wartezeit in Sekunden bis zum nächsten Versuch, wenn das Neuladen der Gerätestruktur fehlschlägt.
+CONFIG_RETRY_INTERVAL: int = 300
+
+# Suffixe der Unique-IDs von Ingest-Entitäten (Number und Select).
+INGEST_UID_SUFFIXES: tuple[str, ...] = ("_ingest", "_ingest_select")

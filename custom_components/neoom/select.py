@@ -15,7 +15,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, LOGGER
 from .coordinator import NeoomLocalCoordinator
-from .helpers import get_friendly_thing_name
+from .helpers import get_friendly_thing_name, is_ingest_entity_wanted
 
 # Bekannte Optionen für spezifische Schlüssel.
 # Da die API uns leider keine Liste der erlaubten Werte in der Konfiguration 
@@ -98,9 +98,9 @@ async def async_setup_entry(
                                 )
                             )
                     else:
-                        # Wenn nicht steuerbar (z.B. Generic Device), legen wir eine Ingest-Entität an (standardmäßig deaktiviert)
+                        # Wenn nicht steuerbar, legen wir für Generic Devices eine Ingest-Entität an (standardmäßig deaktiviert)
                         uid = f"{thing_id}_{dp_id}_ingest_select"
-                        if uid not in known_select_ids:
+                        if uid not in known_select_ids and is_ingest_entity_wanted(hass, "select", uid, thing_data):
                             known_select_ids.add(uid)
                             new_entities.append(
                                 NeoomIngestSelect(

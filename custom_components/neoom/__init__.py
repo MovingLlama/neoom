@@ -13,6 +13,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 
@@ -26,9 +27,11 @@ from .const import (
     CONF_SCAN_INTERVAL_LOCAL,
     DEFAULT_SCAN_INTERVAL_CLOUD,
     DEFAULT_SCAN_INTERVAL_LOCAL,
+    INGEST_UID_SUFFIXES,
     LOGGER,
 )
 from .coordinator import NeoomCloudCoordinator, NeoomLocalCoordinator
+from .helpers import is_generic_thing
 
 # Definiere die unterstützten Plattformen, die von dieser Integration geladen werden.
 # Wir unterstützen Sensoren (nur-lesen), Number-Entitäten (Zahleneingabe/Slider),
@@ -53,11 +56,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     LOGGER.debug("Starte das Setup für den neoom AI Eintrag: %s", entry.entry_id)
 
-    # Lese Zugangsdaten und Optionen aus entry.options (Fallback auf entry.data)
-    cloud_token = entry.options.get(CONF_CLOUD_TOKEN, entry.data.get(CONF_CLOUD_TOKEN, ""))
+    # Zugangsdaten liegen ausschließlich in entry.data, Intervalle in entry.options
+    cloud_token = entry.data.get(CONF_CLOUD_TOKEN, "")
     site_id = entry.data.get(CONF_SITE_ID, "")
-    beaam_ip = entry.options.get(CONF_BEAAM_IP, entry.data.get(CONF_BEAAM_IP, ""))
-    beaam_key = entry.options.get(CONF_BEAAM_KEY, entry.data.get(CONF_BEAAM_KEY, ""))
+    beaam_ip = entry.data.get(CONF_BEAAM_IP, "")
+    beaam_key = entry.data.get(CONF_BEAAM_KEY, "")
     scan_interval_cloud = entry.options.get(CONF_SCAN_INTERVAL_CLOUD, DEFAULT_SCAN_INTERVAL_CLOUD)
     scan_interval_local = entry.options.get(CONF_SCAN_INTERVAL_LOCAL, DEFAULT_SCAN_INTERVAL_LOCAL)
 
@@ -123,6 +126,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         configuration_url=f"http://{beaam_ip}",
     )
     LOGGER.debug("BEAAM Gateway im Device Registry angelegt oder abgerufen.")
+
+    # Ingest-Entitäten früherer Versionen entfernen, die nicht mehr angelegt werden
+    _async_remove_stale_ingest_entities(hass, entry, local_coordinator)
 
     # Weist Home Assistant an, die in PLATFORMS definierten Komponenten (Sensor, Number, Select)
     # asynchron für diesen Eintrag einzurichten.
@@ -204,3 +210,92 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Lädt den Konfigurationseintrag neu, wenn Optionen geändert wurden."""
     await hass.config_entries.async_reload(entry.entry_id)
 
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migriert Konfigurationseinträge älterer Versionen.
+
+    Version 1 → 2: Zugangsdaten (Token, IP, Key) konnten über das Zahnrad in
+    entry.options landen und überschrieben dort die Werte aus Reauth/Reconfigure.
+    Sie werden nach entry.data verschoben, sodass sie nur noch an einer Stelle liegen.
+    """
+    LOGGER.debug("Migriere neoom AI Eintrag von Version %s", entry.version)
+
+    if entry.version > 2:
+        # Downgrade von einer neueren Version wird nicht unterstützt
+        return False
+
+    if entry.version == 1:
+        credential_keys = (CONF_CLOUD_TOKEN, CONF_BEAAM_IP, CONF_BEAAM_KEY)
+        new_data = dict(entry.data)
+        new_options = dict(entry.options)
+        for conf_key in credential_keys:
+            # Die Werte aus options waren bisher wirksam und haben daher Vorrang
+            if new_options.get(conf_key):
+                new_data[conf_key] = new_options[conf_key]
+            new_options.pop(conf_key, None)
+
+        hass.config_entries.async_update_entry(
+            entry, data=new_data, options=new_options, version=2
+        )
+        LOGGER.info("neoom AI Eintrag %s auf Version 2 migriert.", entry.entry_id)
+
+    return True
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: ConfigEntry, device_entry: dr.DeviceEntry
+) -> bool:
+    """Erlaubt das Löschen von Geräten, die das BEAAM Gateway nicht mehr meldet."""
+    data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if not data:
+        return False
+
+    local_coordinator: NeoomLocalCoordinator = data["local"]
+    known_things = (local_coordinator.beaam_config or {}).get("things", {})
+    site_id = entry.data.get(CONF_SITE_ID, entry.entry_id)
+    protected_ids = {"BEAAM Gateway", f"beaam_{site_id}", site_id}
+
+    for domain, identifier in device_entry.identifiers:
+        if domain != DOMAIN:
+            continue
+        # Gateway, Site-Gerät und weiterhin gemeldete Geräte dürfen nicht gelöscht werden
+        if identifier in protected_ids or identifier in known_things:
+            return False
+
+    return True
+
+
+def _async_remove_stale_ingest_entities(
+    hass: HomeAssistant, entry: ConfigEntry, local_coordinator: NeoomLocalCoordinator
+) -> None:
+    """Entfernt deaktivierte Ingest-Entitäten von Geräten, die keine Generic Devices sind.
+
+    Frühere Versionen haben für jeden nicht steuerbaren Datenpunkt eine (deaktivierte)
+    Ingest-Entität angelegt. Vom Benutzer aktivierte Entitäten bleiben erhalten.
+    """
+    things = (local_coordinator.beaam_config or {}).get("things", {})
+    if not isinstance(things, dict):
+        return
+
+    generic_prefixes = tuple(
+        f"{thing_id}_"
+        for thing_id, thing_data in things.items()
+        if isinstance(thing_data, dict) and is_generic_thing(thing_data)
+    )
+
+    registry = er.async_get(hass)
+    removed = 0
+    for entity_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+        unique_id = entity_entry.unique_id
+        if not unique_id.endswith(INGEST_UID_SUFFIXES):
+            continue
+        if entity_entry.disabled_by is None:
+            continue
+        if generic_prefixes and unique_id.startswith(generic_prefixes):
+            continue
+        registry.async_remove(entity_entry.entity_id)
+        removed += 1
+
+    if removed:
+        LOGGER.info("%s nicht mehr benötigte Ingest-Entitäten entfernt.", removed)
