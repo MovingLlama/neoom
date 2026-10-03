@@ -6,6 +6,9 @@
 - Einstellungen (Number, Select, Switch, Time) werden nicht mehr als fehlgeschlagen gemeldet, wenn das Gateway sie angenommen hat, der anschließende Abgleich aber länger dauert. Der Abgleich läuft jetzt 1,5 s später im Hintergrund, statt innerhalb des 10-s-Timeouts des Sendens. Die Bedienung in der Oberfläche blockiert dadurch nicht mehr. Mehrere Änderungen kurz hintereinander lösen nur einen Abgleich aus.
 - Auch nach Befehlen und `neoom.ingest_state` zählt der Abgleich nicht mehr zum Timeout des Sendens.
 
+### Verbessert
+- States und Einstellungen aller Geräte werden in einer gemeinsamen Runde parallel vom Gateway abgefragt statt in zwei Runden nacheinander. Ein Abfragezyklus dauert dadurch etwa halb so lang.
+
 ## 1.1.3
 
 ### Behoben

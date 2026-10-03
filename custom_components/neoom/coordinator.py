@@ -306,8 +306,10 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                         coros_states = [self._fetch_thing_state(tid, headers) for tid in thing_ids]
                         coros_settings = [self._fetch_thing_settings(tid, headers) for tid in thing_ids]
 
-                        results_states = await asyncio.gather(*coros_states, return_exceptions=True)
-                        results_settings = await asyncio.gather(*coros_settings, return_exceptions=True)
+                        # States und Settings in einer Runde parallel abfragen, dann wieder aufteilen
+                        results = await asyncio.gather(*coros_states, *coros_settings, return_exceptions=True)
+                        results_states = results[: len(thing_ids)]
+                        results_settings = results[len(thing_ids) :]
                         
                         for thing_id, res in zip(thing_ids, results_states):
                             if isinstance(res, dict) and "states" in res:

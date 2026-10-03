@@ -1,5 +1,6 @@
 """Tests für das Senden von Einstellungen und Befehlen an das BEAAM Gateway."""
 
+import asyncio
 from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
@@ -108,3 +109,35 @@ async def test_refresh_runs_outside_send_timeout(hass: HomeAssistant, aioclient_
         await send(local)
 
     assert order == ["timeout_end", "refresh"]
+
+
+async def test_states_and_settings_fetched_in_one_round(hass: HomeAssistant, aioclient_mock) -> None:
+    """States und Settings laufen gleichzeitig; die Ergebnisse landen beim richtigen Thing."""
+    _, local = await _setup(hass, aioclient_mock)
+    settings_started = asyncio.Event()
+    overlapped: list[bool] = []
+
+    async def _state(thing_id: str, _headers: dict) -> dict:
+        # In zwei getrennten Runden würde keine Settings-Abfrage starten, solange States laufen
+        try:
+            async with asyncio.timeout(1):
+                await settings_started.wait()
+            overlapped.append(True)
+        except TimeoutError:
+            overlapped.append(False)
+        return {"states": [{"dataPointId": f"dp-{thing_id}", "key": "POWER", "value": 1}]}
+
+    async def _settings(thing_id: str, _headers: dict) -> dict:
+        settings_started.set()
+        return {"settings": [{"key": "MAX_POWER", "value": f"{thing_id}-max"}]}
+
+    with (
+        patch.object(local, "_fetch_thing_state", side_effect=_state),
+        patch.object(local, "_fetch_thing_settings", side_effect=_settings),
+    ):
+        data = await local._async_update_data()
+
+    assert overlapped and all(overlapped)
+    for thing_id in local.beaam_config["things"]:
+        assert data["states"][f"{thing_id}_POWER"]["value"] == 1
+        assert data["settings"][thing_id] == {"MAX_POWER": f"{thing_id}-max"}
