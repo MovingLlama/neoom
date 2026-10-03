@@ -10,19 +10,18 @@ from datetime import time
 from typing import Any
 
 from homeassistant.components.time import TimeEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, LOGGER, SettingSpec
-from .coordinator import NeoomLocalCoordinator
+from .coordinator import NeoomConfigEntry, NeoomLocalCoordinator
 from .helpers import classify_setting, get_friendly_thing_name
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: NeoomConfigEntry,
     async_add_entities: Callable[[list[TimeEntity]], None],
 ) -> None:
     """Richtet die Time-Plattform basierend auf dem Konfigurationseintrag ein.
@@ -30,8 +29,7 @@ async def async_setup_entry(
     Erstellt Time-Entitäten für alle erkannten Uhrzeit-Einstellungen der Things
     und überwacht spätere Coordinator-Updates für neu erkannte Entitäten.
     """
-    data: dict[str, Any] = hass.data[DOMAIN][entry.entry_id]
-    local_coordinator: NeoomLocalCoordinator = data["local"]
+    local_coordinator = entry.runtime_data.local
 
     known_time_ids: set[str] = set()
 

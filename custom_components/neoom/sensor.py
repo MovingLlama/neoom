@@ -12,7 +12,6 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     PERCENTAGE,
     UnitOfElectricCurrent,
@@ -28,8 +27,8 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import NeoomCloudCoordinator, NeoomLocalCoordinator
-from .helpers import get_friendly_thing_name
+from .coordinator import NeoomCloudCoordinator, NeoomConfigEntry, NeoomLocalCoordinator
+from .helpers import array_item_type, find_state, get_friendly_thing_name
 
 # Pseudo-Thing-ID für die standortweiten Energiefluss-Datenpunkte des BEAAM Gateways.
 # Entspricht dem Präfix, unter dem der Koordinator die Werte aus site/state ablegt.
@@ -43,10 +42,23 @@ BATTERY_LEVEL_INDICATORS = ("SOC", "STATE_OF_CHARGE")
 # sinken oder negativ sein und sind daher keine stetig steigenden Zählerstände.
 DERIVED_ENERGY_INDICATORS = ("_CALC", "APPLIANCES")
 
+# Energiefluss-Werte, die das Gateway nur mit einem eigenen Verbrauchszähler liefert. Ohne ihn
+# bleiben sie leer; die Entitäten werden daher standardmäßig deaktiviert angelegt.
+METER_ONLY_ENERGY_FLOW_KEYS = ("POWER_CONSUMPTION", "ENERGY_CONSUMED", "POWER_GRID_REMAINING")
+
+# Anteile (0…1) im Energiefluss, z. B. FRACTION_PV_TO_CONSUMPTION. Sie werden in Prozent angezeigt.
+FRACTION_PREFIX = "FRACTION_"
+
+# Anzeige von Text-Arrays (z. B. ERROR_CODES), wenn die Liste leer ist.
+EMPTY_LIST_STATE = "none"
+
+# Maximale Länge eines Sensorzustands in Home Assistant.
+MAX_STATE_LENGTH = 255
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: NeoomConfigEntry,
     async_add_entities: Callable[[list[SensorEntity]], None],
 ) -> None:
     """Richtet die Sensor-Plattform basierend auf dem Konfigurationseintrag ein.
@@ -54,10 +66,9 @@ async def async_setup_entry(
     Diese Methode wird von Home Assistant aufgerufen, um Entitäten zu registrieren.
     """
 
-    # Hole die Koordinatoren, die wir in __init__.py gespeichert haben
-    data: dict[str, Any] = hass.data[DOMAIN][entry.entry_id]
-    cloud_coordinator: NeoomCloudCoordinator = data["cloud"]
-    local_coordinator: NeoomLocalCoordinator = data["local"]
+    # Hole die Koordinatoren, die wir in __init__.py am Eintrag abgelegt haben
+    cloud_coordinator = entry.runtime_data.cloud
+    local_coordinator = entry.runtime_data.local
 
     entities: list[SensorEntity] = []
 
@@ -119,6 +130,7 @@ async def async_setup_entry(
             return
 
         new_entities: list[SensorEntity] = []
+        state_map: dict[str, Any] = local_coordinator.data.get("states", {})
 
         # Standortweite Energiefluss-Werte (z.B. Hausverbrauch, Netzbezug, Gesamt-SoC).
         # Sie gehören zu keinem einzelnen Gerät und werden dem BEAAM Gateway zugeordnet.
@@ -153,6 +165,7 @@ async def async_setup_entry(
                     continue
 
                 dtype: str = dp_data.get("dataType", "")
+                item_type = array_item_type(dtype)
 
                 # Wir erstellen Sensoren für Zahlen (Leistung, Prozente) und Strings (Betriebsmodi)
                 if dtype in ["NUMBER", "STRING"]:
@@ -168,6 +181,41 @@ async def async_setup_entry(
                                 dp_data=dp_data,
                             )
                         )
+                elif item_type == "STRING":
+                    # Text-Listen (z. B. ERROR_CODES) als ein Sensor mit allen Einträgen
+                    unique_id = f"{thing_id}_{dp_id}"
+                    if unique_id not in known_sensor_ids:
+                        known_sensor_ids.add(unique_id)
+                        new_entities.append(
+                            NeoomStringArraySensor(
+                                coordinator=local_coordinator,
+                                thing_id=thing_id,
+                                thing_data=thing_data,
+                                dp_id=dp_id,
+                                dp_data=dp_data,
+                            )
+                        )
+                elif item_type == "NUMBER":
+                    # Zahlen-Listen (z. B. Spannung pro PV-String) als ein Sensor pro Eintrag. Wie viele
+                    # Einträge es gibt, zeigt erst der aktuelle Zustand.
+                    data_point = find_state(state_map, thing_id, dp_id, dp_data.get("key", ""))
+                    values = data_point.get("value") if data_point else None
+                    if not isinstance(values, list):
+                        continue
+                    for index in range(len(values)):
+                        unique_id = f"{thing_id}_{dp_id}_{index}"
+                        if unique_id not in known_sensor_ids:
+                            known_sensor_ids.add(unique_id)
+                            new_entities.append(
+                                NeoomArrayItemSensor(
+                                    coordinator=local_coordinator,
+                                    thing_id=thing_id,
+                                    thing_data=thing_data,
+                                    dp_id=dp_id,
+                                    dp_data=dp_data,
+                                    index=index,
+                                )
+                            )
 
         if new_entities:
             async_add_entities(new_entities)
@@ -231,11 +279,13 @@ class NeoomCloudSensor(CoordinatorEntity, SensorEntity):
     def device_info(self) -> DeviceInfo:
         """Gibt Informationen zum virtuellen Cloud-Gerät zurück.
 
-        Gruppiert die Cloud-Sensoren zusammen unter einem "Gerät" in der UI.
+        Gruppiert die Cloud-Sensoren zusammen unter einem "Gerät" in der UI. Der Name enthält
+        den Namen der Site, damit sich mehrere Sites unterscheiden lassen.
         """
+        site_name = self.coordinator.site_name
         return DeviceInfo(
             identifiers={(DOMAIN, self.coordinator.site_id)},
-            name="neoom AI Cloud Site",
+            name=f"neoom AI Cloud ({site_name})" if site_name else "neoom AI Cloud Site",
             manufacturer="neoom",
             model="Cloud API",
         )
@@ -278,6 +328,13 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
         # Leite die richtige Einheit (z.B. kW, W) aus der rohen API-Einheit ab
         self._attr_native_unit_of_measurement = self._map_unit(self._uom_raw)
 
+        # Anteile (0…1) ohne eigene Einheit werden in Prozent angezeigt
+        self._is_fraction = self._key.startswith(FRACTION_PREFIX) and self._attr_native_unit_of_measurement is None
+        if self._is_fraction:
+            self._attr_native_unit_of_measurement = PERCENTAGE
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+            self._attr_suggested_display_precision = 1
+
         # Initialen Status beim Erstellen setzen
         self._update_state()
 
@@ -296,8 +353,7 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
             self._attr_native_value = None
             return
 
-        state_map: dict[str, Any] = self.coordinator.data.get("states", {})
-        data_point: dict[str, Any] | None = state_map.get(self._dp_id) or state_map.get(f"{self._thing_id}_{self._key}")
+        data_point = self._current_data_point()
 
         if data_point:
             raw_value = data_point.get("value")
@@ -318,6 +374,8 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
                     self._attr_native_value = "Fest EIN (Mode 4)"
                 else:
                     self._attr_native_value = raw_value
+            elif self._is_fraction and isinstance(raw_value, (int, float)):
+                self._attr_native_value = float(raw_value) * 100
             elif raw_value is not None and isinstance(raw_value, (int, float)):
                 self._attr_native_value = float(raw_value)
             else:
@@ -325,6 +383,12 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
         else:
             self._attr_native_value = None
 
+    def _current_data_point(self) -> dict[str, Any] | None:
+        """Liefert den aktuellen Zustand dieses Datenpunkts aus den Coordinator-Daten."""
+        if not self.coordinator.data:
+            return None
+        state_map: dict[str, Any] = self.coordinator.data.get("states", {})
+        return find_state(state_map, self._thing_id, self._dp_id, self._key)
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -493,8 +557,81 @@ class NeoomEnergyFlowSensor(NeoomLocalSensor):
         )
         # Die Gateway-Kennung enthält die Site-ID, damit mehrere Sites nicht kollidieren.
         self._attr_unique_id = f"{coordinator.gateway_identifier[1]}_energy_flow_{dp_id}"
+        if self._key in METER_ONLY_ENERGY_FLOW_KEYS:
+            # Betrifft nur neu angelegte Entitäten; bestehende behalten ihren Status
+            self._attr_entity_registry_enabled_default = False
 
     @property
     def device_info(self) -> DeviceInfo:
         """Ordnet den Sensor dem (bereits registrierten) BEAAM Gateway der Site zu."""
         return DeviceInfo(identifiers={self.coordinator.gateway_identifier})
+
+
+class NeoomArrayItemSensor(NeoomLocalSensor):
+    """Ein Eintrag eines Zahlen-Arrays, z. B. die Spannung eines PV-Strings (VOLTAGES[0])."""
+
+    def __init__(
+        self,
+        coordinator: NeoomLocalCoordinator,
+        thing_id: str,
+        thing_data: dict[str, Any],
+        dp_id: str,
+        dp_data: dict[str, Any],
+        index: int,
+    ) -> None:
+        """Initialisiert den Sensor für den Eintrag mit dem Index index (ab 0)."""
+        self._index = index
+        super().__init__(coordinator, thing_id, thing_data, dp_id, dp_data)
+        # Anzeige ab 1, z. B. "Voltages 1" für den ersten PV-String
+        self._attr_name = f"{self._attr_name} {index + 1}"
+        self._attr_unique_id = f"{thing_id}_{dp_id}_{index}"
+
+    def _update_state(self) -> None:
+        """Liest den Eintrag self._index aus der Liste des Datenpunkts."""
+        data_point = self._current_data_point()
+        values = data_point.get("value") if data_point else None
+        value = values[self._index] if isinstance(values, list) and self._index < len(values) else None
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            self._attr_native_value = float(value)
+        else:
+            self._attr_native_value = None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Ergänzt die Attribute um den Index im Array."""
+        return {**super().extra_state_attributes, "index": self._index}
+
+
+class NeoomStringArraySensor(NeoomLocalSensor):
+    """Eine Text-Liste, z. B. ERROR_CODES. Der Zustand zeigt alle Einträge durch Komma getrennt."""
+
+    def __init__(
+        self,
+        coordinator: NeoomLocalCoordinator,
+        thing_id: str,
+        thing_data: dict[str, Any],
+        dp_id: str,
+        dp_data: dict[str, Any],
+    ) -> None:
+        """Initialisiert den Sensor (ohne Einheit und Geräteklasse)."""
+        super().__init__(coordinator, thing_id, thing_data, dp_id, dp_data)
+        self._attr_device_class = None
+        self._attr_state_class = None
+        self._attr_native_unit_of_measurement = None
+
+    def _update_state(self) -> None:
+        """Fasst die Einträge der Liste zu einem Text zusammen."""
+        data_point = self._current_data_point()
+        values = data_point.get("value") if data_point else None
+        if not isinstance(values, list):
+            self._values: list[Any] = []
+            self._attr_native_value = None
+            return
+        self._values = values
+        text = ", ".join(str(value) for value in values) or EMPTY_LIST_STATE
+        self._attr_native_value = text[:MAX_STATE_LENGTH]
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Ergänzt die Attribute um die vollständige Liste."""
+        return {**super().extra_state_attributes, "values": self._values}

@@ -8,10 +8,12 @@ Das verhindert, dass jede Entität eigene Netzwerk-Anfragen stellt, was die Syst
 
 import asyncio
 import time
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
 import aiohttp
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -51,6 +53,7 @@ class NeoomCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         hass: HomeAssistant,
         token: str,
         site_id: str,
+        site_name: str = "",
         scan_interval: int = DEFAULT_SCAN_INTERVAL_CLOUD,
     ) -> None:
         """Initialisiert den Cloud-Koordinator.
@@ -59,6 +62,7 @@ class NeoomCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             hass: Die Home Assistant Instanz.
             token: Das Authentifizierungs-Token (Bearer Token) für die Cloud.
             site_id: Die eindeutige ID des Standorts (Site).
+            site_name: Anzeigename der Site (Titel des Konfigurationseintrags).
             scan_interval: Aktualisierungsintervall in Sekunden.
         """
         super().__init__(
@@ -70,6 +74,7 @@ class NeoomCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.token = token
         self.site_id = site_id
+        self.site_name = site_name
         # ClientSession wird von Home Assistant zentral verwaltet
         self.session = async_get_clientsession(hass)
 
@@ -128,9 +133,6 @@ class NeoomCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Fängt Überschreitungen des asyncio.timeout ab
             raise UpdateFailed("Timeout bei der Verbindung zur neoom AI API.") from err
 
-    async def close(self) -> None:
-        """Schließen-Methode (Session wird von Home Assistant verwaltet)."""
-
 
 class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Koordinator für den Abruf von lokalen Live-Daten vom BEAAM Gateway."""
@@ -188,19 +190,19 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _ensure_config_loaded(self) -> None:
         """Stellt sicher, dass die Gerätestruktur ("Konfiguration") vom Gateway geladen und aktuell ist.
 
-        Diese Konfiguration enhält Informationen über alle verbundenden Geräte ("Things")
+        Diese Konfiguration enthält Informationen über alle verbundenen Geräte ("Things")
         und ihre verfügbaren Datenpunkte ("DataPoints").
         Die API wird beim ersten Aufruf und danach alle CONFIG_REFRESH_INTERVAL Sekunden abgefragt,
-        damit neue Geräte ohne Neustart erkannt werden. Schlägt ein erneutes Laden fehl,
-        bleibt die bisherige Konfiguration erhalten.
+        damit neue Geräte ohne Neustart erkannt werden. Meldet das Gateway denselben
+        versionTimestamp wie bisher, bleibt die bisherige Konfiguration unverändert in Gebrauch.
+        Schlägt ein erneutes Laden fehl, bleibt die bisherige Konfiguration erhalten.
         """
         now = time.monotonic()
         if self.beaam_config is not None and now < self._config_refresh_due:
             return  # Konfiguration ist geladen und noch aktuell
 
         try:
-            self.beaam_config = await self._fetch_config()
-            self._config_refresh_due = now + CONFIG_REFRESH_INTERVAL
+            new_config = await self._fetch_config()
         except ConfigEntryAuthFailed:
             raise
         except Exception as err:
@@ -212,6 +214,17 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 err,
             )
             self._config_refresh_due = now + CONFIG_RETRY_INTERVAL
+            return
+
+        self._config_refresh_due = now + CONFIG_REFRESH_INTERVAL
+        old_version = (self.beaam_config or {}).get("versionTimestamp")
+        new_version = (new_config or {}).get("versionTimestamp")
+        if old_version is not None and old_version == new_version:
+            LOGGER.debug("BEAAM Konfiguration unverändert (versionTimestamp %s).", new_version)
+            return
+        if self.beaam_config is not None:
+            LOGGER.info("BEAAM Konfiguration hat sich geändert (versionTimestamp %s -> %s).", old_version, new_version)
+        self.beaam_config = new_config
 
     async def _fetch_config(self) -> dict[str, Any]:
         """Lädt die Gerätestruktur vom Gateway und ergänzt virtuelle Datenpunkte."""
@@ -531,3 +544,14 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._unsub_setting_refresh is not None:
             self._unsub_setting_refresh()
             self._unsub_setting_refresh = None
+
+
+@dataclass
+class NeoomData:
+    """Laufzeitdaten eines Konfigurationseintrags (entry.runtime_data)."""
+
+    cloud: NeoomCloudCoordinator
+    local: NeoomLocalCoordinator
+
+
+type NeoomConfigEntry = ConfigEntry[NeoomData]

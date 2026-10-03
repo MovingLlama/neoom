@@ -112,9 +112,11 @@ The integration automatically creates devices based on the hardware connected to
 | Device / Interface | Available Sensors & Controls |
 | :--- | :--- |
 | **neoom AI Cloud** | Electricity price (ct/kWh), feed-in tariff (ct/kWh) |
+| **All devices** | Connection to the gateway (`CONNECTION`, binary sensor under "Diagnostic") |
 | **BEAAM Gateway** | Net grid feed, total feed-in, grid frequency, voltages (L1/L2/L3), site-wide energy flow (e.g. house consumption, grid, storage, PV, total SoC – as reported by the gateway) |
-| **Inverter** | Current power (W), energy produced (kWh), phase currents (A) |
-| **Battery Storage**| State of charge / SoC (%), charge/discharge power (W), temperature, state of health |
+| **Inverter** | Current power (W), energy produced (kWh), phase currents (A), power per input (`INPUTS_POWER`) |
+| **PV** | Voltage and current per string (`VOLTAGES`/`CURRENTS`, one sensor per string), connection per string |
+| **Battery Storage**| State of charge / SoC (%), charge/discharge power (W), temperature, state of health, backup power active (`EPS_MODE_ACTIVE`), error codes |
 | **EV Charger** | Status (connected/charging), charging power, modes (1P/3P switching via select entity) |
 | **Heat Pump** | Status, flow/return temperatures, thermal power, COP, SG-Ready mode selection (Modes 1-4) & EMS mode (Solar / Excluded) |
 
@@ -148,6 +150,9 @@ logger:
     custom_components.neoom: debug
 ```
 * Search in *Settings -> System -> Logs* for entries starting with `neoom`.
+
+**Diagnostics for bug reports**
+* *Settings -> Devices & services -> neoom AI -> ⋮ -> Download diagnostics* creates a file with the device structure, current values and settings. Tokens, API key, IP address, site ID, site name/address, serial numbers and RFID cards are removed, so the file can be attached to an issue.
 
 ---
 
@@ -264,9 +269,11 @@ Die Integration erstellt automatisch Geräte (Devices) basierend auf der an Ihr 
 | Gerät / Schnittstelle | Verfügbare Sensoren & Steuerungen |
 | :--- | :--- |
 | **neoom AI Cloud** | Strompreis (ct/kWh), Einspeisetarif (ct/kWh) |
+| **Alle Geräte** | Verbindung zum Gateway (`CONNECTION`, Binärsensor unter „Diagnose“) |
 | **BEAAM Gateway** | Gesamt-Netzbezug, Gesamte Einspeisung, Netzfrequenz, Spannungen (L1/L2/L3), standortweiter Energiefluss (z. B. Hausverbrauch, Netz, Speicher, PV, Gesamt-SoC – je nachdem, was das Gateway meldet) |
-| **Wechselrichter** | Aktuelle Leistung (W), Produzierte Energie (kWh), Phasen-Ströme (A) |
-| **Batteriespeicher**| Ladezustand / SoC (%), Lade-/Entladeleistung (W), Temperatur, State of Health |
+| **Wechselrichter** | Aktuelle Leistung (W), Produzierte Energie (kWh), Phasen-Ströme (A), Leistung pro Eingang (`INPUTS_POWER`) |
+| **PV** | Spannung und Strom pro String (`VOLTAGES`/`CURRENTS`, ein Sensor pro String), Verbindung pro String |
+| **Batteriespeicher**| Ladezustand / SoC (%), Lade-/Entladeleistung (W), Temperatur, State of Health, Notstrom aktiv (`EPS_MODE_ACTIVE`), Fehlercodes |
 | **E-Ladestation** | Status (Verbunden/Lädt), Ladeleistung, Modi (1P/3P Umschaltung über Select-Entität) |
 | **Wärmepumpe** | Status, Vorlauf-/Rücklauftemperaturen, Wärmeleistung, COP, SG-Ready Modusauswahl (Mode 1-4) & EMS-Betriebsmodus (Solar / Ausgenommen) |
 
@@ -301,6 +308,9 @@ logger:
     custom_components.neoom: debug
 ```
 Suchen Sie anschließend unter *Einstellungen -> System -> Protokolle* nach Einträgen mit dem Präfix `neoom`.
+
+**Diagnosedaten für Fehlerberichte**
+Unter *Einstellungen -> Geräte & Dienste -> neoom AI -> ⋮ -> Diagnosedaten herunterladen* erstellt Home Assistant eine Datei mit Gerätestruktur, aktuellen Werten und Einstellungen. Token, API-Key, IP-Adresse, Site-ID, Name/Adresse der Site, Seriennummern und RFID-Karten sind entfernt, sodass die Datei einem Issue angehängt werden kann.
 
 ---
 

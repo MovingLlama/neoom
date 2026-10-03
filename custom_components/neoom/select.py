@@ -9,13 +9,12 @@ from collections.abc import Callable
 from typing import Any
 
 from homeassistant.components.select import SelectEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, LOGGER
-from .coordinator import NeoomLocalCoordinator
+from .coordinator import NeoomConfigEntry, NeoomLocalCoordinator
 from .helpers import classify_setting, get_friendly_thing_name, is_ingest_entity_wanted
 
 # Bekannte Optionen für spezifische Schlüssel.
@@ -35,7 +34,7 @@ KNOWN_SETTINGS_OPTIONS: dict[str, list[str]] = {
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: NeoomConfigEntry,
     async_add_entities: Callable[[list[SelectEntity]], None],
 ) -> None:
     """Richtet die Select-Plattform basierend auf dem Konfigurationseintrag ein.
@@ -43,8 +42,7 @@ async def async_setup_entry(
     Durchsucht die BEAAM Konfiguration nach steuerbaren Text-Datenpunkten und Einstellungen,
     und überwacht spätere Coordinator-Updates für neu erkannte Entitäten.
     """
-    data: dict[str, Any] = hass.data[DOMAIN][entry.entry_id]
-    local_coordinator: NeoomLocalCoordinator = data["local"]
+    local_coordinator = entry.runtime_data.local
 
     known_select_ids: set[str] = set()
 

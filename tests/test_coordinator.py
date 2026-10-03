@@ -36,7 +36,7 @@ async def _setup(hass: HomeAssistant, aioclient_mock) -> tuple[MockConfigEntry, 
     entry.add_to_hass(hass)
     assert await async_setup_component(hass, DOMAIN, {})
     await hass.async_block_till_done()
-    return entry, hass.data[DOMAIN][entry.entry_id]["local"]
+    return entry, entry.runtime_data.local
 
 
 def _fire_after_delay(hass: HomeAssistant) -> None:

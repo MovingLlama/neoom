@@ -121,3 +121,27 @@ def is_ingest_entity_wanted(
         return False
     entry = registry.async_get(entity_id)
     return entry is not None and entry.disabled_by is None
+
+
+def array_item_type(data_type: str) -> str | None:
+    """Liefert den Elementtyp eines Array-Datenpunkts ("NUMBER_ARRAY[]" -> "NUMBER"), sonst None."""
+    base = data_type.removesuffix("[]")
+    if base.endswith("_ARRAY"):
+        return base.removesuffix("_ARRAY")
+    return None
+
+
+def find_state(states: dict[str, Any], thing_id: str, dp_id: str, key: str) -> dict[str, Any] | None:
+    """Sucht den aktuellen Zustand eines Datenpunkts (über die ID, sonst über den Schlüssel)."""
+    return states.get(dp_id) or states.get(f"{thing_id}_{key}")
+
+
+def parse_bool(value: Any) -> bool | None:
+    """Wandelt einen Wert der API in einen Wahrheitswert um (die API liefert Booleans oder Strings)."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str) and value.lower() in ("true", "false", "1", "0"):
+        return value.lower() in ("true", "1")
+    return None

@@ -44,6 +44,7 @@ def test_classify_setting(key: str, value: object, platform: str | None, known: 
 SETTINGS = [
     {"key": "LOCK_TIME", "value": "1800"},
     {"key": "POWER_THRESHOLD_NORMAL_OP", "value": "2000"},
+    {"key": "PRIORITY", "value": "1"},
     {"key": "GRIID_CHARGING_ENERGY", "value": "17000"},
     {"key": "BATTERY_CHARGE_FROM_GRID_ALLOWED", "value": "false"},
     {"key": "UNKNOWN_LIMIT", "value": "5"},
@@ -69,9 +70,15 @@ async def test_setting_entities(hass: HomeAssistant, aioclient_mock) -> None:
     assert lock_time.state == "1800.0"
     assert lock_time.attributes["unit_of_measurement"] == "s"
     assert lock_time.attributes["device_class"] == "duration"
+    assert lock_time.attributes["max"] == 86_400
+
+    priority = hass.states.get(_entry("number", "PRIORITY").entity_id)
+    assert priority.state == "1.0"
+    assert (priority.attributes["min"], priority.attributes["max"]) == (0, 100)
 
     threshold = hass.states.get(_entry("number", "POWER_THRESHOLD_NORMAL_OP").entity_id)
     assert threshold.attributes["unit_of_measurement"] == "W"
+    assert threshold.attributes["max"] == 50_000
 
     energy = hass.states.get(_entry("number", "GRIID_CHARGING_ENERGY").entity_id)
     assert energy.state == "17.0"
