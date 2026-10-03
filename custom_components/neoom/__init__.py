@@ -6,32 +6,32 @@ Sie stellt eine hybride Verbindung her:
 2. Eine lokale Netzwerkverbindung zum BEAAM Gateway für Live-Energiedaten (oft aktualisiert).
 """
 
-from typing import Dict, Any
+from typing import Any
 
+import homeassistant.helpers.config_validation as cv
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-import homeassistant.helpers.config_validation as cv
-import voluptuous as vol
 
 from .const import (
-    DOMAIN,
-    CONF_CLOUD_TOKEN,
-    CONF_SITE_ID,
     CONF_BEAAM_IP,
     CONF_BEAAM_KEY,
+    CONF_CLOUD_TOKEN,
     CONF_SCAN_INTERVAL_CLOUD,
     CONF_SCAN_INTERVAL_LOCAL,
+    CONF_SITE_ID,
     DEFAULT_SCAN_INTERVAL_CLOUD,
     DEFAULT_SCAN_INTERVAL_LOCAL,
+    DOMAIN,
     INGEST_UID_SUFFIXES,
     LOGGER,
 )
 from .coordinator import NeoomCloudCoordinator, NeoomLocalCoordinator
-from .helpers import gateway_identifier, is_generic_thing
+from .helpers import gateway_identifier, is_generic_thing, virtual_sg_ready_dp_id
 
 # Definiere die unterstützten Plattformen, die von dieser Integration geladen werden.
 # Wir unterstützen Sensoren (nur-lesen), Number-Entitäten (Zahleneingabe/Slider),
@@ -131,6 +131,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Ingest-Entitäten früherer Versionen entfernen, die nicht mehr angelegt werden
     _async_remove_stale_ingest_entities(hass, entry, local_coordinator)
+    _async_remove_virtual_sg_ready_selects(hass, entry, local_coordinator)
 
     # Weist Home Assistant an, die in PLATFORMS definierten Komponenten (Sensor, Number, Select)
     # asynchron für diesen Eintrag einzurichten.
@@ -142,7 +143,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         thing_id = call.data.get("thing_id")
         key = call.data.get("key")
         value = call.data.get("value")
-        
+
         # Sende den Wert an das zuständige BEAAM Gateway
         sent = False
         for entry_id, coordinators in hass.data.get(DOMAIN, {}).items():
@@ -156,7 +157,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         sent = True
                     except Exception as err:
                         LOGGER.error("Fehler beim Senden von State-Ingest für Eintrag %s: %s", entry_id, err)
-        
+
         if not sent:
             LOGGER.warning("Thing '%s' wurde in keinem konfigurierten BEAAM Gateway gefunden.", thing_id)
 
@@ -178,27 +179,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Entlädt einen Konfigurationseintrag.
-    
+
     Wird aufgerufen, wenn der Benutzer die Integration über die UI löscht
     oder neu lädt. Räumt die verwendeten Ressourcen (z.B. HTTP-Sessions) auf.
-    
+
     Args:
         hass: Die Home Assistant Instanz.
         entry: Der zu entladende Konfigurationseintrag.
-        
+
     Returns:
         True, wenn das Entladen erfolgreich war.
     """
-    
+
     # Entlade zuerst alle Plattformen (Sensor, Number, Select)
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         # Wenn erfolgreich, entferne unsere gespeicherten Coordinators aus hass.data
-        data: Dict[str, Any] = hass.data[DOMAIN].pop(entry.entry_id)
-        
+        data: dict[str, Any] = hass.data[DOMAIN].pop(entry.entry_id)
+
         # Schließe die HTTP-Sessions sauber
         await data["cloud"].close()
         await data["local"].close()
-        
+
         # Entferne den Service, wenn kein weiterer neoom-Eintrag mehr existiert
         if not hass.data[DOMAIN] and hass.services.has_service(DOMAIN, "ingest_state"):
             hass.services.async_remove(DOMAIN, "ingest_state")
@@ -347,3 +348,33 @@ def _async_remove_stale_ingest_entities(
 
     if removed:
         LOGGER.info("%s nicht mehr benötigte Ingest-Entitäten entfernt.", removed)
+
+
+def _async_remove_virtual_sg_ready_selects(
+    hass: HomeAssistant, entry: ConfigEntry, local_coordinator: NeoomLocalCoordinator
+) -> None:
+    """Entfernt Auswahl-Entitäten früherer Versionen für virtuelle SG-Ready-Datenpunkte.
+
+    Der virtuelle Datenpunkt ist nur noch lesend; das Gateway kennt ihn nicht und setzt
+    Befehle dafür nicht zuverlässig um. Der Sensor mit dem aktuellen Modus bleibt erhalten.
+    """
+    things = (local_coordinator.beaam_config or {}).get("things", {})
+    if not isinstance(things, dict):
+        return
+
+    stale_unique_ids = {
+        f"{thing_id}_{virtual_sg_ready_dp_id(thing_id)}_select"
+        for thing_id, thing_data in things.items()
+        if isinstance(thing_data, dict) and thing_data.get("type") == "HEAT_PUMP"
+    }
+    if not stale_unique_ids:
+        return
+
+    registry = er.async_get(hass)
+    for entity_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if entity_entry.domain == "select" and entity_entry.unique_id in stale_unique_ids:
+            registry.async_remove(entity_entry.entity_id)
+            LOGGER.info(
+                "Auswahl %s entfernt: SG-Ready wird vom Gateway für dieses Gerät nicht als steuerbar gemeldet.",
+                entity_entry.entity_id,
+            )

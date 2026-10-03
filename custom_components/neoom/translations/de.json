@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "neoom AI Einrichtung",
-        "description": "Bitte gib deine neoom AI und BEAAM Daten ein.",
+        "description": "Bitte gib deine neoom AI und BEAAM Daten ein. Hinweis: Das BEAAM wird über unverschlüsseltes HTTP angesprochen, verwende es daher nur in deinem vertrauenswürdigen lokalen Netz.",
         "data": {
           "cloud_token": "neoom AI Bearer Token",
           "beaam_ip": "Lokale IP des BEAAM (z.B. 192.168.1.50)",

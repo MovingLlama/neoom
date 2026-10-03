@@ -4,7 +4,8 @@ Diese Datei definiert Schalter (Switch-Entitäten) für boolesche Einstellparame
 des lokalen BEAAM Gateways (z.B. Erlaubnis zum Laden/Entladen der Batterie aus dem Netz).
 """
 
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
@@ -12,28 +13,22 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, LOGGER
+from .const import DOMAIN, LOGGER, SettingSpec
 from .coordinator import NeoomLocalCoordinator
-from .helpers import get_friendly_thing_name
-
-# Bekannte boolesche Einstellungen und deren freundliche Bezeichnungen
-BOOLEAN_SETTINGS = {
-    "BATTERY_CHARGE_FROM_GRID_ALLOWED": "Allow battery charging from grid",
-    "BATTERY_DISCHARGE_TO_GRID_ALLOWED": "Allow battery discharging to grid",
-}
+from .helpers import classify_setting, get_friendly_thing_name
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
-    async_add_entities: Callable[[List[SwitchEntity]], None],
+    async_add_entities: Callable[[list[SwitchEntity]], None],
 ) -> None:
     """Richtet die Switch-Plattform basierend auf dem Konfigurationseintrag ein.
-    
+
     Erstellt Switch-Entitäten für alle erkannten booleschen Einstellungen der Things
     und überwacht spätere Coordinator-Updates für neu erkannte Entitäten.
     """
-    data: Dict[str, Any] = hass.data[DOMAIN][entry.entry_id]
+    data: dict[str, Any] = hass.data[DOMAIN][entry.entry_id]
     local_coordinator: NeoomLocalCoordinator = data["local"]
 
     known_switch_ids: set[str] = set()
@@ -54,7 +49,7 @@ async def async_setup_entry(
         if not isinstance(things, dict):
             return
 
-        new_entities: List[SwitchEntity] = []
+        new_entities: list[SwitchEntity] = []
 
         for thing_id, thing_data in things.items():
             if not thing_data or not isinstance(thing_data, dict):
@@ -65,24 +60,23 @@ async def async_setup_entry(
                 continue
 
             for key, val in thing_settings.items():
-                # Prüfe, ob es eine bekannte boolesche Einstellung ist,
-                # oder ob der Wert "true"/"false" ist (case-insensitive)
-                is_bool = key in BOOLEAN_SETTINGS
-                if not is_bool and isinstance(val, str) and val.lower() in ["true", "false"]:
-                    is_bool = True
+                spec, known = classify_setting(key, val)
+                if spec is None or spec.platform != "switch":
+                    continue
 
-                if is_bool:
-                    unique_id = f"{thing_id}_{key}_switch"
-                    if unique_id not in known_switch_ids:
-                        known_switch_ids.add(unique_id)
-                        new_entities.append(
-                            NeoomSettingSwitch(
-                                coordinator=local_coordinator,
-                                thing_id=thing_id,
-                                thing_data=thing_data,
-                                setting_key=key,
-                            )
+                unique_id = f"{thing_id}_{key}_switch"
+                if unique_id not in known_switch_ids:
+                    known_switch_ids.add(unique_id)
+                    new_entities.append(
+                        NeoomSettingSwitch(
+                            coordinator=local_coordinator,
+                            thing_id=thing_id,
+                            thing_data=thing_data,
+                            setting_key=key,
+                            spec=spec,
+                            known=known,
                         )
+                    )
 
         if new_entities:
             async_add_entities(new_entities)
@@ -102,34 +96,36 @@ class NeoomSettingSwitch(CoordinatorEntity, SwitchEntity):
         self,
         coordinator: NeoomLocalCoordinator,
         thing_id: str,
-        thing_data: Dict[str, Any],
+        thing_data: dict[str, Any],
         setting_key: str,
+        spec: SettingSpec,
+        known: bool,
     ) -> None:
-        """Initialisiert die Switch-Entität."""
+        """Initialisiert die Switch-Entität (unbekannte Einstellungen standardmäßig deaktiviert)."""
         super().__init__(coordinator)
         self._thing_id = thing_id
         self._thing_type: str = thing_data.get("type", "Unknown")
         self._setting_key = setting_key
-        
+
         beaam_config = coordinator.data.get("config", {}) if coordinator.data else {}
         self._friendly_thing_name = get_friendly_thing_name(beaam_config, thing_id, self._thing_type)
-        
-        friendly_dp_name = BOOLEAN_SETTINGS.get(setting_key, setting_key.replace("_", " ").title())
-        self._attr_name = friendly_dp_name
+
+        self._attr_name = spec.name or setting_key.replace("_", " ").title()
+        self._attr_entity_registry_enabled_default = known
         self._attr_translation_key = setting_key.lower()
         self._attr_unique_id = f"{thing_id}_{setting_key}_switch"
         self._attr_icon = "mdi:toggle-switch"
 
     @property
-    def is_on(self) -> Optional[bool]:
+    def is_on(self) -> bool | None:
         """Gibt True zurück, wenn der Schalter eingeschaltet ist."""
         if not self.coordinator.data:
             return None
-        
+
         settings_map = self.coordinator.data.get("settings", {})
         thing_settings = settings_map.get(self._thing_id, {})
         val = thing_settings.get(self._setting_key)
-        
+
         if val is not None:
             if isinstance(val, bool):
                 return val

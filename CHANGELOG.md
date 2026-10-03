@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.1.4
+
+### Geändert
+- **SG-Ready bei Wärmepumpen ohne eigenen Datenpunkt ist nur noch lesend.** Meldet das Gateway bei einer Wärmepumpe keinen SG-Ready-Datenpunkt, ergänzt die Integration ihn weiterhin, damit der Modus als Sensor angezeigt wird. Die Auswahl zum Umstellen entfällt jedoch: Das Gateway kennt diesen Datenpunkt nicht, Befehle dafür wurden nicht zuverlässig umgesetzt. Gesteuert wird nur, was das Gateway selbst als steuerbar meldet. Bestehende Auswahl-Entitäten dieses virtuellen Datenpunkts werden automatisch entfernt. Wärmepumpen, deren Gateway SG-Ready als steuerbar meldet, sind nicht betroffen.
+
+### Behoben
+- Einstellungen (Number, Select, Switch, Time) werden nicht mehr als fehlgeschlagen gemeldet, wenn das Gateway sie angenommen hat, der anschließende Abgleich aber länger dauert. Der Abgleich läuft jetzt 1,5 s später im Hintergrund, statt innerhalb des 10-s-Timeouts des Sendens. Die Bedienung in der Oberfläche blockiert dadurch nicht mehr. Mehrere Änderungen kurz hintereinander lösen nur einen Abgleich aus.
+- Auch nach Befehlen und `neoom.ingest_state` zählt der Abgleich nicht mehr zum Timeout des Sendens.
+
+### Verbessert
+- Der Antworttext des Gateways nach einer Einstellungsänderung steht nur noch im Debug-Log statt bei jeder Änderung im normalen Log.
+- Hinweis in README und Einrichtungsdialog: Die lokale BEAAM-API ist unverschlüsseltes HTTP (das BEAAM bietet kein HTTPS an); die Integration nur im vertrauenswürdigen lokalen Netz verwenden und den BEAAM-Port nicht ins Internet freigeben.
+- **Einstellungen werden über eine feste Tabelle zugeordnet.** Bekannte Einstellungen bekommen passende Einheiten: Schwellwerte der Wärmepumpe (`POWER_THRESHOLD_*`) in W, Sperr- und Anlaufzeit (`LOCK_TIME`, `RAMP_UP_TIME`) in Sekunden. Einstellungen, die das Gateway neu meldet und die die Integration noch nicht kennt, werden weiterhin anhand ihres Werts erkannt, aber standardmäßig deaktiviert angelegt; sie lassen sich in den Entitäts-Einstellungen aktivieren. Bereits vorhandene Entitäten bleiben aktiv. Jede Einstellung erzeugt nur noch eine Entität (bisher konnte z. B. ein Schlüssel mit „POWER“ und dem Wert `true` gleichzeitig Schalter und Zahl werden).
+- Neu in der Tabelle laut offizieller BEAAM-API-Doku: Einspeise-Priorisierung (`GRID_FEED_IN_PRIORITIZATION_ENABLED` als Schalter, `GRID_FEED_IN_PRIORITIZATION_POWER` in W). Einstellungen, deren Wert das Gateway als echten Boolean statt als Text `"true"`/`"false"` liefert, werden jetzt ebenfalls als Schalter erkannt.
+- States und Einstellungen aller Geräte werden in einer gemeinsamen Runde parallel vom Gateway abgefragt statt in zwei Runden nacheinander. Ein Abfragezyklus dauert dadurch etwa halb so lang.
+- Ist ein einzelnes Gerät (z. B. die Batterie) über das Gateway nicht abrufbar, erscheint jetzt einmalig eine Warnung mit Gerätename und Ursache im Log; sobald es wieder antwortet, eine Info. Bisher standen solche Fehler nur im Debug-Log, und Antworten mit HTTP-Fehlercode wurden gar nicht protokolliert. Weitere Fehler desselben Geräts landen weiterhin nur im Debug-Log. Geräte ohne Einstellungen (HTTP 404 auf `/settings`) gelten nicht als Fehler.
+
+### Intern
+- Neuer CI-Workflow „Lint & Test“: `ruff check` und `pytest` laufen bei jedem Push und Pull Request (Tests mit einer älteren und der aktuellen Home Assistant Version). Ruff-Konfiguration in `pyproject.toml`; der bestehende Code wurde entsprechend bereinigt (u. a. moderne Typschreibweise `dict`/`X | None`, keine Leerzeichen am Zeilenende), ohne Verhaltensänderung.
+
 ## 1.1.3
 
 ### Behoben
