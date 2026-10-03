@@ -48,7 +48,7 @@ async def test_options_flow_stores_credentials_in_data(hass: HomeAssistant, aioc
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options == {CONF_SCAN_INTERVAL_LOCAL: 30, CONF_SCAN_INTERVAL_CLOUD: 600}
     assert entry.data[CONF_BEAAM_KEY] == "new-key"
-    assert hass.data[DOMAIN][entry.entry_id]["local"].key == "new-key"
+    assert entry.runtime_data.local.key == "new-key"
 
 
 async def test_reauth_after_options_uses_new_credentials(hass: HomeAssistant, aioclient_mock) -> None:
@@ -82,9 +82,9 @@ async def test_reauth_after_options_uses_new_credentials(hass: HomeAssistant, ai
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reauth_successful"
-    coordinators = hass.data[DOMAIN][entry.entry_id]
-    assert coordinators["local"].key == "fresh-key"
-    assert coordinators["cloud"].token == "fresh-token"
+    coordinators = entry.runtime_data
+    assert coordinators.local.key == "fresh-key"
+    assert coordinators.cloud.token == "fresh-token"
 
 
 async def test_reconfigure_shows_and_updates_data(hass: HomeAssistant, aioclient_mock) -> None:
@@ -104,4 +104,4 @@ async def test_reconfigure_shows_and_updates_data(hass: HomeAssistant, aioclient
     await hass.async_block_till_done()
 
     assert result["reason"] == "reconfigure_successful"
-    assert hass.data[DOMAIN][entry.entry_id]["local"].key == "reconf-key"
+    assert entry.runtime_data.local.key == "reconf-key"

@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1.5
+
+### Neu
+- **Binärsensoren für Ja/Nein-Datenpunkte** (Datentyp `BOOLEAN`): z. B. die Verbindung jedes Geräts zum Gateway (`CONNECTION`, Geräteklasse *Konnektivität*, unter „Diagnose“) und ob der Notstrombetrieb der Batterie aktiv ist (`EPS_MODE_ACTIVE`). Bisher wurden diese Datenpunkte ignoriert.
+- **Array-Datenpunkte** werden unterstützt: Zahlen-Listen wie Spannung und Strom pro PV-String (`VOLTAGES`, `CURRENTS`) oder `INPUTS_POWER` ergeben einen Sensor pro Eintrag („Voltages 1“, „Voltages 2“, …), Ja/Nein-Listen (`CONNECTIONS`) einen Binärsensor pro Eintrag. Text-Listen wie `ERROR_CODES` oder `OPERATING_MODES` erscheinen als ein Sensor mit allen Einträgen (leer: `none`), die vollständige Liste steht im Attribut `values`.
+- **Diagnosedaten**: Unter *Einstellungen → Geräte & Dienste → neoom AI → ⋮ → Diagnosedaten herunterladen* gibt es jetzt eine Datei mit Gerätestruktur, aktuellen Werten und Einstellungen für Fehlerberichte. Token, API-Key, IP-Adresse, Site-ID, Name und Adresse der Site sowie Seriennummern und RFID-Karten sind darin unkenntlich gemacht.
+
+### Geändert
+- Anteile im Energiefluss (`FRACTION_*`, z. B. „Fraction PV To Consumption“) werden in Prozent (0–100 %) statt als Wert zwischen 0 und 1 angezeigt.
+- Die Energiefluss-Werte `POWER_CONSUMPTION`, `ENERGY_CONSUMED` und `POWER_GRID_REMAINING` liefert das Gateway nur mit eigenem Verbrauchszähler. Sie werden bei neuen Installationen deaktiviert angelegt. Bestehende Entitäten bleiben unverändert und lassen sich bei Bedarf in den Entitäts-Einstellungen deaktivieren.
+- Das Cloud-Gerät heißt jetzt „neoom AI Cloud (<Site>)“ statt für jede Site gleich „neoom AI Cloud Site“.
+- Wertebereiche der Einstellungen: Priorität 0–100, Leistungs-Schwellwerte und Einspeise-Priorisierung 0–50.000 W, Anlauf- und Sperrzeit 0–86.400 s (bisher jeweils bis 1.000.000).
+- Die Gerätestruktur des Gateways wird alle 5 Minuten statt stündlich geprüft; neue Geräte erscheinen dadurch schneller. Meldet das Gateway denselben `versionTimestamp`, bleibt die bisherige Struktur unverändert in Gebrauch.
+
+### Intern
+- Die Coordinators liegen in `entry.runtime_data` statt in `hass.data[DOMAIN]`; die leere `close()`-Methode des Cloud-Coordinators entfällt.
+
 ## 1.1.4
 
 ### Geändert

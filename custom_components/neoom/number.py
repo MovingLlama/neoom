@@ -13,7 +13,6 @@ from homeassistant.components.number import (
     NumberEntity,
     NumberMode,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     PERCENTAGE,
     UnitOfElectricCurrent,
@@ -25,7 +24,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, LOGGER, SettingSpec
-from .coordinator import NeoomLocalCoordinator
+from .coordinator import NeoomConfigEntry, NeoomLocalCoordinator
 from .helpers import classify_setting, get_friendly_thing_name, is_ingest_entity_wanted
 
 # Diese Schlüssel werden konsequent ignoriert, auch wenn die API sie als "controllable" (steuerbar) markiert.
@@ -36,7 +35,7 @@ IGNORE_KEYS: list[str] = ["MIN_SOC", "MAX_POWER_CHARGE_FALLBACK", "TARGET_POWER"
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: NeoomConfigEntry,
     async_add_entities: Callable[[list[NumberEntity]], None],
 ) -> None:
     """Richtet die Number-Plattform basierend auf dem Konfigurationseintrag ein.
@@ -45,9 +44,8 @@ async def async_setup_entry(
     Konfiguration nach steuerbaren, numerischen Datenpunkten durchsucht und auf spätere Updates reagiert.
     """
 
-    data: dict[str, Any] = hass.data[DOMAIN][entry.entry_id]
     # Number-Entitäten steuern nur das lokale Gateway, daher brauchen wir nur den lokalen Coordinator
-    local_coordinator: NeoomLocalCoordinator = data["local"]
+    local_coordinator = entry.runtime_data.local
 
     known_number_ids: set[str] = set()
 
