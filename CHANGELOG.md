@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.1
+
+### Behoben
+- Ladezustands-Sensoren mit dem Schlüssel `STATE_OF_CHARGE` (z. B. „Batterie Master State Of Charge“) erhalten jetzt die Geräteklasse *Batterie* und sind im Energie-Dashboard als Ladezustand auswählbar. Bisher wurde nur `SOC` erkannt ([#1](https://github.com/MovingLlama/neoom/issues/1)).
+
+### Neu
+- Standortweite Energiefluss-Werte des BEAAM Gateways (z. B. Hausverbrauch, Netz, Speicher, PV, Gesamt-SoC) werden – sofern das Gateway sie in seiner Konfiguration meldet – als Sensoren am Gerät „BEAAM Gateway“ angelegt. Damit ist der Gesamtverbrauch wie in der neoom App („Stromverbrauch allgemein“) in Home Assistant verfügbar ([#1](https://github.com/MovingLlama/neoom/issues/1)).
+
 ## 1.1.0
 
 ### ⚠️ Breaking Changes

@@ -110,7 +110,7 @@ The integration automatically creates devices based on the hardware connected to
 | Device / Interface | Available Sensors & Controls |
 | :--- | :--- |
 | **neoom AI Cloud** | Electricity price (ct/kWh), feed-in tariff (ct/kWh) |
-| **BEAAM Gateway** | Net grid feed, total feed-in, grid frequency, voltages (L1/L2/L3) |
+| **BEAAM Gateway** | Net grid feed, total feed-in, grid frequency, voltages (L1/L2/L3), site-wide energy flow (e.g. house consumption, grid, storage, PV, total SoC – as reported by the gateway) |
 | **Inverter** | Current power (W), energy produced (kWh), phase currents (A) |
 | **Battery Storage**| State of charge / SoC (%), charge/discharge power (W), temperature, state of health |
 | **EV Charger** | Status (connected/charging), charging power, modes (1P/3P switching via select entity) |
@@ -118,6 +118,10 @@ The integration automatically creates devices based on the hardware connected to
 
 > **Note on scaling:**
 > Home Assistant displays native units by default (e.g., Watt or Watt-hours). You can change the display unit directly in the Home Assistant frontend (e.g., to Kilowatt `kW`) by clicking the cogwheel icon of the entity.
+
+> **Note on the energy dashboard:**
+> State of charge sensors (`SOC` / `STATE_OF_CHARGE`) use the device class *battery* and can be selected as the battery's state of charge.
+> The "Untracked consumption" flow is calculated by Home Assistant itself (total home consumption minus the individual devices you added) – it is not a value of this integration. The site-wide house consumption reported by the gateway is available as an energy flow sensor on the BEAAM Gateway device.
 
 ---
 
@@ -256,7 +260,7 @@ Die Integration erstellt automatisch Geräte (Devices) basierend auf der an Ihr 
 | Gerät / Schnittstelle | Verfügbare Sensoren & Steuerungen |
 | :--- | :--- |
 | **neoom AI Cloud** | Strompreis (ct/kWh), Einspeisetarif (ct/kWh) |
-| **BEAAM Gateway** | Gesamt-Netzbezug, Gesamte Einspeisung, Netzfrequenz, Spannungen (L1/L2/L3) |
+| **BEAAM Gateway** | Gesamt-Netzbezug, Gesamte Einspeisung, Netzfrequenz, Spannungen (L1/L2/L3), standortweiter Energiefluss (z. B. Hausverbrauch, Netz, Speicher, PV, Gesamt-SoC – je nachdem, was das Gateway meldet) |
 | **Wechselrichter** | Aktuelle Leistung (W), Produzierte Energie (kWh), Phasen-Ströme (A) |
 | **Batteriespeicher**| Ladezustand / SoC (%), Lade-/Entladeleistung (W), Temperatur, State of Health |
 | **E-Ladestation** | Status (Verbunden/Lädt), Ladeleistung, Modi (1P/3P Umschaltung über Select-Entität) |
@@ -264,6 +268,10 @@ Die Integration erstellt automatisch Geräte (Devices) basierend auf der an Ihr 
 
 > **Hinweis zur Skalierung:**
 > Home Assistant zeigt Ihnen standardmäßig die nativen Einheiten an (z. B. Watt oder Wattstunden). Sie können die Anzeigeeinheit direkt in der Benutzeroberfläche von Home Assistant umstellen (z. B. auf Kilowatt `kW`), indem Sie auf das Zahnrad-Symbol der jeweiligen Entität klicken.
+
+> **Hinweis zum Energie-Dashboard:**
+> Ladezustands-Sensoren (`SOC` / `STATE_OF_CHARGE`) haben die Geräteklasse *Batterie* und können als Ladezustand des Speichers ausgewählt werden.
+> Der Fluss „Nicht erfasster Verbrauch“ wird von Home Assistant selbst berechnet (Gesamt-Hausverbrauch abzüglich der einzeln hinzugefügten Geräte) und ist kein Wert dieser Integration. Den vom Gateway gemeldeten Hausverbrauch des Standorts finden Sie als Energiefluss-Sensor am Gerät „BEAAM Gateway“.
 
 ---
 

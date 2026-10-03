@@ -30,6 +30,13 @@ from .const import DOMAIN
 from .coordinator import NeoomCloudCoordinator, NeoomLocalCoordinator
 from .helpers import get_friendly_thing_name
 
+# Pseudo-Thing-ID für die standortweiten Energiefluss-Datenpunkte des BEAAM Gateways.
+# Entspricht dem Präfix, unter dem der Koordinator die Werte aus site/state ablegt.
+ENERGY_FLOW_ID = "energyFlow"
+
+# Schlüssel-Bestandteile, die einen Batterie-Ladezustand kennzeichnen.
+BATTERY_LEVEL_INDICATORS = ("SOC", "STATE_OF_CHARGE")
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -106,6 +113,26 @@ async def async_setup_entry(
             return
 
         new_entities: List[SensorEntity] = []
+
+        # Standortweite Energiefluss-Werte (z.B. Hausverbrauch, Netzbezug, Gesamt-SoC).
+        # Sie gehören zu keinem einzelnen Gerät und werden dem BEAAM Gateway zugeordnet.
+        energy_flow = beaam_config.get("energyFlow")
+        if isinstance(energy_flow, dict):
+            ef_datapoints = energy_flow.get("dataPoints", {})
+            if isinstance(ef_datapoints, dict):
+                for dp_id, dp_data in ef_datapoints.items():
+                    if not dp_data or not isinstance(dp_data, dict):
+                        continue
+                    if dp_data.get("dataType", "") not in ["NUMBER", "STRING"]:
+                        continue
+                    sensor = NeoomEnergyFlowSensor(
+                        coordinator=local_coordinator,
+                        dp_id=dp_id,
+                        dp_data=dp_data,
+                    )
+                    if sensor.unique_id not in known_sensor_ids:
+                        known_sensor_ids.add(sensor.unique_id)
+                        new_entities.append(sensor)
 
         for thing_id, thing_data in things.items():
             if not thing_data or not isinstance(thing_data, dict):
@@ -385,8 +412,9 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
             return SensorDeviceClass.TEMPERATURE
         if unit in ["s", "h", UnitOfTime.SECONDS, UnitOfTime.HOURS] or "TIME" in key or "DURATION" in key:
             return SensorDeviceClass.DURATION
-        if unit == "%" and "SOC" in key:
-            # SOC steht in der Branche für "State of Charge" (Batteriestand)
+        if unit == "%" and any(ind in key.upper() for ind in BATTERY_LEVEL_INDICATORS):
+            # SOC bzw. STATE_OF_CHARGE steht für den Batterie-Ladezustand. Die Geräteklasse
+            # "Batterie" ist nötig, damit der Sensor im Energie-Dashboard auswählbar ist.
             return SensorDeviceClass.BATTERY
             
         return None
@@ -420,6 +448,7 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
                 "CURRENT",
                 "LEVEL",
                 "SOC",
+                "STATE_OF_CHARGE",
             ]
             if any(indicator in key_upper for indicator in non_cumulative_indicators):
                 return SensorStateClass.MEASUREMENT
@@ -429,3 +458,33 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
 
         # Normalfall für sonstige Messwerte
         return SensorStateClass.MEASUREMENT
+
+
+class NeoomEnergyFlowSensor(NeoomLocalSensor):
+    """Standortweiter Energiefluss-Wert des BEAAM Gateways (z.B. Hausverbrauch).
+
+    Diese Werte entsprechen der Energiefluss-Übersicht der neoom App und werden
+    dem BEAAM Gateway-Gerät der Site zugeordnet.
+    """
+
+    def __init__(
+        self,
+        coordinator: NeoomLocalCoordinator,
+        dp_id: str,
+        dp_data: Dict[str, Any],
+    ) -> None:
+        """Initialisiert den Energiefluss-Sensor."""
+        super().__init__(
+            coordinator=coordinator,
+            thing_id=ENERGY_FLOW_ID,
+            thing_data={"type": "ENERGY_FLOW"},
+            dp_id=dp_id,
+            dp_data=dp_data,
+        )
+        # Die Gateway-Kennung enthält die Site-ID, damit mehrere Sites nicht kollidieren.
+        self._attr_unique_id = f"{coordinator.gateway_identifier[1]}_energy_flow_{dp_id}"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Ordnet den Sensor dem (bereits registrierten) BEAAM Gateway der Site zu."""
+        return DeviceInfo(identifiers={self.coordinator.gateway_identifier})
