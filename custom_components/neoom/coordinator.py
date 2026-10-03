@@ -13,9 +13,10 @@ from typing import Any, Dict, List, Optional
 
 import aiohttp
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
@@ -29,6 +30,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL_LOCAL,
     DOMAIN,
     LOGGER,
+    SETTING_REFRESH_DELAY,
 )
 from .helpers import SUPPORTS_VIA_DEVICE_ID, gateway_identifier
 
@@ -156,6 +158,8 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
         self.gateway_identifier = gateway_identifier(site_id)
         # Registry-ID des Gateway-Geräts, wird beim Setup in __init__.py gesetzt
         self.gateway_device_id: Optional[str] = None
+        # Geplanter Refresh nach einer Einstellungsänderung (zum Abbrechen beim Entladen)
+        self._unsub_setting_refresh: Optional[CALLBACK_TYPE] = None
         self.session = async_get_clientsession(hass)
         
         # Speichert die Konfiguration des Gateways. Die Struktur der angebundenen Geräte
@@ -364,10 +368,12 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 async with self.session.post(url, headers=headers, json=payload) as resp:
                     resp.raise_for_status()
                     LOGGER.info("Befehl an BEAAM erfolgreich gesendet: %s -> %s", key, value)
-                    await self.async_request_refresh()
         except Exception as err:
             LOGGER.error("Schwerwiegender Fehler beim Senden des Befehls an '%s': %s", thing_id, err)
             raise
+
+        # Außerhalb des Timeouts: Ein langsamer Refresh macht den gesendeten Befehl nicht ungültig
+        await self.async_request_refresh()
 
     async def async_ingest_state(self, thing_id: str, key: str, value: Any) -> None:
         """Sendet (ingests) einen Sensorwert an ein generisches Gerät im BEAAM Gateway."""
@@ -391,10 +397,12 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                 async with self.session.post(url, headers=headers, json=payload) as resp:
                     resp.raise_for_status()
                     LOGGER.info("State-Ingest an BEAAM erfolgreich gesendet: %s -> %s", key, value)
-                    await self.async_request_refresh()
         except Exception as err:
             LOGGER.error("Schwerwiegender Fehler beim Senden des States an '%s': %s", thing_id, err)
             raise
+
+        # Außerhalb des Timeouts: Ein langsamer Refresh macht den gesendeten Wert nicht ungültig
+        await self.async_request_refresh()
 
     async def async_send_setting(self, thing_id: str, key: str, value: Any) -> None:
         """Sendet eine Einstellungsänderung an die BEAAM API."""
@@ -445,14 +453,32 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
                         if thing_id not in self.data["settings"]:
                             self.data["settings"][thing_id] = {}
                         self.data["settings"][thing_id][key] = api_value
-
-                    self.async_update_listeners()
-                    await asyncio.sleep(1.5)
-                    await self.async_request_refresh()
         except Exception as err:
             LOGGER.error("Schwerwiegender Fehler beim Senden der Einstellung an '%s': %s", thing_id, err)
             raise
 
+        # Die Einstellung gilt als gesetzt, sobald das Gateway sie angenommen hat. Der neue Wert
+        # wird sofort angezeigt und kurz darauf im Hintergrund vom Gateway bestätigt.
+        self.async_update_listeners()
+        self._async_schedule_setting_refresh()
+
+    @callback
+    def _async_schedule_setting_refresh(self) -> None:
+        """Plant einen Refresh SETTING_REFRESH_DELAY Sekunden nach einer Einstellungsänderung.
+
+        Mehrere Änderungen kurz hintereinander lösen nur einen Refresh aus.
+        """
+        if self._unsub_setting_refresh is not None:
+            self._unsub_setting_refresh()
+
+        async def _async_refresh(_now: Any) -> None:
+            self._unsub_setting_refresh = None
+            await self.async_request_refresh()
+
+        self._unsub_setting_refresh = async_call_later(self.hass, SETTING_REFRESH_DELAY, _async_refresh)
+
     async def close(self) -> None:
-        """Schließen-Methode (Session wird von Home Assistant verwaltet)."""
-        pass
+        """Bricht einen noch geplanten Refresh ab (die Session wird von Home Assistant verwaltet)."""
+        if self._unsub_setting_refresh is not None:
+            self._unsub_setting_refresh()
+            self._unsub_setting_refresh = None

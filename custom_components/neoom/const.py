@@ -61,5 +61,9 @@ CONFIG_REFRESH_INTERVAL: int = 3600
 # Wartezeit in Sekunden bis zum nächsten Versuch, wenn das Neuladen der Gerätestruktur fehlschlägt.
 CONFIG_RETRY_INTERVAL: int = 300
 
+# Wartezeit in Sekunden, bis nach einer Einstellungsänderung neu abgefragt wird. Das Gateway
+# übernimmt Einstellungen mit kurzer Verzögerung.
+SETTING_REFRESH_DELAY: float = 1.5
+
 # Suffixe der Unique-IDs von Ingest-Entitäten (Number und Select).
 INGEST_UID_SUFFIXES: tuple[str, ...] = ("_ingest", "_ingest_select")
