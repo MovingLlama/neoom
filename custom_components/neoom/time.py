@@ -15,15 +15,9 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, LOGGER
+from .const import DOMAIN, LOGGER, SettingSpec
 from .coordinator import NeoomLocalCoordinator
-from .helpers import get_friendly_thing_name
-
-# Bekannte Uhrzeit-Einstellungen
-TIME_SETTINGS = {
-    "GRIID_EV_DEPARTURE_TIME": "Departure time",
-}
-
+from .helpers import classify_setting, get_friendly_thing_name
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -67,24 +61,23 @@ async def async_setup_entry(
                 continue
 
             for key, val in thing_settings.items():
-                # Prüfe, ob es eine bekannte Uhrzeit-Einstellung ist,
-                # oder der Schlüssel mit _TIME endet und der Wert im Format HH:MM vorliegt
-                is_time = key in TIME_SETTINGS
-                if not is_time and key.endswith("_TIME") and isinstance(val, str) and ":" in val:
-                    is_time = True
+                spec, known = classify_setting(key, val)
+                if spec is None or spec.platform != "time":
+                    continue
 
-                if is_time:
-                    unique_id = f"{thing_id}_{key}_time"
-                    if unique_id not in known_time_ids:
-                        known_time_ids.add(unique_id)
-                        new_entities.append(
-                            NeoomSettingTime(
-                                coordinator=local_coordinator,
-                                thing_id=thing_id,
-                                thing_data=thing_data,
-                                setting_key=key,
-                            )
+                unique_id = f"{thing_id}_{key}_time"
+                if unique_id not in known_time_ids:
+                    known_time_ids.add(unique_id)
+                    new_entities.append(
+                        NeoomSettingTime(
+                            coordinator=local_coordinator,
+                            thing_id=thing_id,
+                            thing_data=thing_data,
+                            setting_key=key,
+                            spec=spec,
+                            known=known,
                         )
+                    )
 
         if new_entities:
             async_add_entities(new_entities)
@@ -106,8 +99,10 @@ class NeoomSettingTime(CoordinatorEntity, TimeEntity):
         thing_id: str,
         thing_data: Dict[str, Any],
         setting_key: str,
+        spec: SettingSpec,
+        known: bool,
     ) -> None:
-        """Initialisiert die Time-Entität."""
+        """Initialisiert die Time-Entität (unbekannte Einstellungen standardmäßig deaktiviert)."""
         super().__init__(coordinator)
         self._thing_id = thing_id
         self._thing_type: str = thing_data.get("type", "Unknown")
@@ -116,8 +111,8 @@ class NeoomSettingTime(CoordinatorEntity, TimeEntity):
         beaam_config = coordinator.data.get("config", {}) if coordinator.data else {}
         self._friendly_thing_name = get_friendly_thing_name(beaam_config, thing_id, self._thing_type)
         
-        friendly_dp_name = TIME_SETTINGS.get(setting_key, setting_key.replace("_", " ").title())
-        self._attr_name = friendly_dp_name
+        self._attr_name = spec.name or setting_key.replace("_", " ").title()
+        self._attr_entity_registry_enabled_default = known
         self._attr_translation_key = setting_key.lower()
         self._attr_unique_id = f"{thing_id}_{setting_key}_time"
         self._attr_icon = "mdi:clock-outline"

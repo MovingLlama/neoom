@@ -12,16 +12,9 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, LOGGER
+from .const import DOMAIN, LOGGER, SettingSpec
 from .coordinator import NeoomLocalCoordinator
-from .helpers import get_friendly_thing_name
-
-# Bekannte boolesche Einstellungen und deren freundliche Bezeichnungen
-BOOLEAN_SETTINGS = {
-    "BATTERY_CHARGE_FROM_GRID_ALLOWED": "Allow battery charging from grid",
-    "BATTERY_DISCHARGE_TO_GRID_ALLOWED": "Allow battery discharging to grid",
-}
-
+from .helpers import classify_setting, get_friendly_thing_name
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -65,24 +58,23 @@ async def async_setup_entry(
                 continue
 
             for key, val in thing_settings.items():
-                # Prüfe, ob es eine bekannte boolesche Einstellung ist,
-                # oder ob der Wert "true"/"false" ist (case-insensitive)
-                is_bool = key in BOOLEAN_SETTINGS
-                if not is_bool and isinstance(val, str) and val.lower() in ["true", "false"]:
-                    is_bool = True
+                spec, known = classify_setting(key, val)
+                if spec is None or spec.platform != "switch":
+                    continue
 
-                if is_bool:
-                    unique_id = f"{thing_id}_{key}_switch"
-                    if unique_id not in known_switch_ids:
-                        known_switch_ids.add(unique_id)
-                        new_entities.append(
-                            NeoomSettingSwitch(
-                                coordinator=local_coordinator,
-                                thing_id=thing_id,
-                                thing_data=thing_data,
-                                setting_key=key,
-                            )
+                unique_id = f"{thing_id}_{key}_switch"
+                if unique_id not in known_switch_ids:
+                    known_switch_ids.add(unique_id)
+                    new_entities.append(
+                        NeoomSettingSwitch(
+                            coordinator=local_coordinator,
+                            thing_id=thing_id,
+                            thing_data=thing_data,
+                            setting_key=key,
+                            spec=spec,
+                            known=known,
                         )
+                    )
 
         if new_entities:
             async_add_entities(new_entities)
@@ -104,8 +96,10 @@ class NeoomSettingSwitch(CoordinatorEntity, SwitchEntity):
         thing_id: str,
         thing_data: Dict[str, Any],
         setting_key: str,
+        spec: SettingSpec,
+        known: bool,
     ) -> None:
-        """Initialisiert die Switch-Entität."""
+        """Initialisiert die Switch-Entität (unbekannte Einstellungen standardmäßig deaktiviert)."""
         super().__init__(coordinator)
         self._thing_id = thing_id
         self._thing_type: str = thing_data.get("type", "Unknown")
@@ -114,8 +108,8 @@ class NeoomSettingSwitch(CoordinatorEntity, SwitchEntity):
         beaam_config = coordinator.data.get("config", {}) if coordinator.data else {}
         self._friendly_thing_name = get_friendly_thing_name(beaam_config, thing_id, self._thing_type)
         
-        friendly_dp_name = BOOLEAN_SETTINGS.get(setting_key, setting_key.replace("_", " ").title())
-        self._attr_name = friendly_dp_name
+        self._attr_name = spec.name or setting_key.replace("_", " ").title()
+        self._attr_entity_registry_enabled_default = known
         self._attr_translation_key = setting_key.lower()
         self._attr_unique_id = f"{thing_id}_{setting_key}_switch"
         self._attr_icon = "mdi:toggle-switch"

@@ -15,7 +15,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, LOGGER
 from .coordinator import NeoomLocalCoordinator
-from .helpers import get_friendly_thing_name, is_ingest_entity_wanted
+from .helpers import classify_setting, get_friendly_thing_name, is_ingest_entity_wanted
 
 # Bekannte Optionen für spezifische Schlüssel.
 # Da die API uns leider keine Liste der erlaubten Werte in der Konfiguration 
@@ -125,7 +125,8 @@ async def async_setup_entry(
                     continue
 
                 for key, val in thing_settings.items():
-                    if key in KNOWN_SETTINGS_OPTIONS:
+                    spec, _known = classify_setting(key, val)
+                    if spec is not None and spec.platform == "select" and key in KNOWN_SETTINGS_OPTIONS:
                         thing_type = thing_data.get("type") or ""
                         options = KNOWN_SETTINGS_OPTIONS[key]
                         if key == "OPERATING_MODE_EMS":

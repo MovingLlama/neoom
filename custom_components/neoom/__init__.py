@@ -31,7 +31,7 @@ from .const import (
     LOGGER,
 )
 from .coordinator import NeoomCloudCoordinator, NeoomLocalCoordinator
-from .helpers import gateway_identifier, is_generic_thing
+from .helpers import gateway_identifier, is_generic_thing, virtual_sg_ready_dp_id
 
 # Definiere die unterstützten Plattformen, die von dieser Integration geladen werden.
 # Wir unterstützen Sensoren (nur-lesen), Number-Entitäten (Zahleneingabe/Slider),
@@ -131,6 +131,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Ingest-Entitäten früherer Versionen entfernen, die nicht mehr angelegt werden
     _async_remove_stale_ingest_entities(hass, entry, local_coordinator)
+    _async_remove_virtual_sg_ready_selects(hass, entry, local_coordinator)
 
     # Weist Home Assistant an, die in PLATFORMS definierten Komponenten (Sensor, Number, Select)
     # asynchron für diesen Eintrag einzurichten.
@@ -347,3 +348,33 @@ def _async_remove_stale_ingest_entities(
 
     if removed:
         LOGGER.info("%s nicht mehr benötigte Ingest-Entitäten entfernt.", removed)
+
+
+def _async_remove_virtual_sg_ready_selects(
+    hass: HomeAssistant, entry: ConfigEntry, local_coordinator: NeoomLocalCoordinator
+) -> None:
+    """Entfernt Auswahl-Entitäten früherer Versionen für virtuelle SG-Ready-Datenpunkte.
+
+    Der virtuelle Datenpunkt ist nur noch lesend; das Gateway kennt ihn nicht und setzt
+    Befehle dafür nicht zuverlässig um. Der Sensor mit dem aktuellen Modus bleibt erhalten.
+    """
+    things = (local_coordinator.beaam_config or {}).get("things", {})
+    if not isinstance(things, dict):
+        return
+
+    stale_unique_ids = {
+        f"{thing_id}_{virtual_sg_ready_dp_id(thing_id)}_select"
+        for thing_id, thing_data in things.items()
+        if isinstance(thing_data, dict) and thing_data.get("type") == "HEAT_PUMP"
+    }
+    if not stale_unique_ids:
+        return
+
+    registry = er.async_get(hass)
+    for entity_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if entity_entry.domain == "select" and entity_entry.unique_id in stale_unique_ids:
+            registry.async_remove(entity_entry.entity_id)
+            LOGGER.info(
+                "Auswahl %s entfernt: SG-Ready wird vom Gateway für dieses Gerät nicht als steuerbar gemeldet.",
+                entity_entry.entity_id,
+            )

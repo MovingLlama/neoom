@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "neoom AI Setup",
-        "description": "Please enter your neoom AI and BEAAM details.",
+        "description": "Please enter your neoom AI and BEAAM details. Note: the BEAAM is accessed via unencrypted HTTP, so only use it within your trusted local network.",
         "data": {
           "cloud_token": "neoom AI Bearer Token",
           "beaam_ip": "Local IP of BEAAM (e.g. 192.168.1.50)",
