@@ -1,0 +1,57 @@
+name: Lint & Test
+
+on:
+  push:
+    branches:
+      - main
+      - beta
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Ruff
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install ruff
+        run: pip install ruff==0.16.10
+
+      - name: Ruff check
+        run: ruff check custom_components tests
+
+  test:
+    name: Pytest (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.13 testet eine ältere Home Assistant Version (vor via_device_id),
+        # 3.14 die aktuelle Version.
+        python-version: ["3.13", "3.14"]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements_test.txt
+
+      - name: Install test dependencies
+        run: pip install -r requirements_test.txt
+
+      - name: Show Home Assistant version
+        run: python -c "from homeassistant.const import __version__; print(__version__)"
+
+      - name: Pytest
+        run: pytest

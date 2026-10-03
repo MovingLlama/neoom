@@ -6,27 +6,27 @@ Sie stellt eine hybride Verbindung her:
 2. Eine lokale Netzwerkverbindung zum BEAAM Gateway für Live-Energiedaten (oft aktualisiert).
 """
 
-from typing import Dict, Any
+from typing import Any
 
+import homeassistant.helpers.config_validation as cv
+import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-import homeassistant.helpers.config_validation as cv
-import voluptuous as vol
 
 from .const import (
-    DOMAIN,
-    CONF_CLOUD_TOKEN,
-    CONF_SITE_ID,
     CONF_BEAAM_IP,
     CONF_BEAAM_KEY,
+    CONF_CLOUD_TOKEN,
     CONF_SCAN_INTERVAL_CLOUD,
     CONF_SCAN_INTERVAL_LOCAL,
+    CONF_SITE_ID,
     DEFAULT_SCAN_INTERVAL_CLOUD,
     DEFAULT_SCAN_INTERVAL_LOCAL,
+    DOMAIN,
     INGEST_UID_SUFFIXES,
     LOGGER,
 )
@@ -143,7 +143,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         thing_id = call.data.get("thing_id")
         key = call.data.get("key")
         value = call.data.get("value")
-        
+
         # Sende den Wert an das zuständige BEAAM Gateway
         sent = False
         for entry_id, coordinators in hass.data.get(DOMAIN, {}).items():
@@ -157,7 +157,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         sent = True
                     except Exception as err:
                         LOGGER.error("Fehler beim Senden von State-Ingest für Eintrag %s: %s", entry_id, err)
-        
+
         if not sent:
             LOGGER.warning("Thing '%s' wurde in keinem konfigurierten BEAAM Gateway gefunden.", thing_id)
 
@@ -179,27 +179,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Entlädt einen Konfigurationseintrag.
-    
+
     Wird aufgerufen, wenn der Benutzer die Integration über die UI löscht
     oder neu lädt. Räumt die verwendeten Ressourcen (z.B. HTTP-Sessions) auf.
-    
+
     Args:
         hass: Die Home Assistant Instanz.
         entry: Der zu entladende Konfigurationseintrag.
-        
+
     Returns:
         True, wenn das Entladen erfolgreich war.
     """
-    
+
     # Entlade zuerst alle Plattformen (Sensor, Number, Select)
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         # Wenn erfolgreich, entferne unsere gespeicherten Coordinators aus hass.data
-        data: Dict[str, Any] = hass.data[DOMAIN].pop(entry.entry_id)
-        
+        data: dict[str, Any] = hass.data[DOMAIN].pop(entry.entry_id)
+
         # Schließe die HTTP-Sessions sauber
         await data["cloud"].close()
         await data["local"].close()
-        
+
         # Entferne den Service, wenn kein weiterer neoom-Eintrag mehr existiert
         if not hass.data[DOMAIN] and hass.services.has_service(DOMAIN, "ingest_state"):
             hass.services.async_remove(DOMAIN, "ingest_state")

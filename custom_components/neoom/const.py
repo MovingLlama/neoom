@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from logging import Logger, getLogger
-from typing import Optional
 
 # Zentraler Logger für die gesamte Integration, erleichtert das Debugging.
 LOGGER: Logger = getLogger(__package__)
@@ -49,7 +48,7 @@ CONF_SCAN_INTERVAL_LOCAL: str = "scan_interval_local"
 
 # Das Intervall in Sekunden, in dem Daten aus der Cloud abgerufen werden.
 # Da sich diese Daten (wie Preise oder Tarife) selten ändern, genügen 5 Minuten.
-DEFAULT_SCAN_INTERVAL_CLOUD: int = 300  
+DEFAULT_SCAN_INTERVAL_CLOUD: int = 300
 
 # Das Intervall in Sekunden, in dem Live-Daten vom lokalen BEAAM Gateway
 # abgerufen werden. Ein kurzer Intervall ist wichtig für Live-Energieflüsse.
@@ -79,9 +78,9 @@ class SettingSpec:
     """Beschreibt, als welche Entität eine Einstellung des Gateways angelegt wird."""
 
     platform: str  # "number", "select", "switch" oder "time"
-    name: Optional[str] = None
-    unit: Optional[str] = None
-    device_class: Optional[str] = None
+    name: str | None = None
+    unit: str | None = None
+    device_class: str | None = None
     min_value: float = 0
     max_value: float = 1_000_000
     step: float = 1
