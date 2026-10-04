@@ -30,10 +30,16 @@ TO_REDACT: set[str] = {
     "city",
     "latitude",
     "longitude",
+    "lat",
+    "lng",
     "location",
     "serialNumber",
     "email",
 }
+
+# Zusätzlich in den Cloud-Daten: Die Site enthält ihre ID unter "id", die Organisation sowie Name
+# und Adresse des Besitzers.
+CLOUD_TO_REDACT: set[str] = TO_REDACT | {"id", "organisation_id", "name"}
 
 # Datenpunkte, deren Werte ein Gerät oder eine Person identifizieren.
 SENSITIVE_STATE_KEYS: set[str] = {"SERIAL_NUMBER", "LAST_RFID_CARD", "MAC_ADDRESS", "IP_ADDRESS"}
@@ -67,8 +73,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: NeoomCo
         ),
         "cloud": {
             "last_update_success": cloud.last_update_success,
-            # Die Cloud liefert zur Site auch Name und Adresse des Besitzers
-            "data": async_redact_data(cloud.data or {}, TO_REDACT | {"name"}),
+            "data": async_redact_data(cloud.data or {}, CLOUD_TO_REDACT),
         },
         "local": {
             "last_update_success": local.last_update_success,

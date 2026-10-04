@@ -50,6 +50,7 @@ Various charging strategies and settings for your devices (such as battery and c
 * **SG-Ready Mode (`OPERATING_MODE_SG_READY`):** Shows the Smart Grid state of heat pumps (Mode 1: Forced OFF, Mode 2: Normal, Mode 3: Recommended ON, Mode 4: Forced ON). Usually the BEAAM Gateway sets this mode itself depending on available energy. A select entity to change it is only created if the gateway reports the data point as controllable; otherwise the mode is a read-only sensor.
 * **Charge Quantity (`GRIID_CHARGING_ENERGY`):** Defines how much energy (in kWh) should be charged in intelligent mode.
 * **Departure Time (`GRIID_EV_DEPARTURE_TIME`):** Sets the target time by which the charging process must be completed (provided as a native Time entity in Home Assistant).
+* **Priority (`PRIORITY`):** Order in which devices in **Solar** mode receive the solar surplus (1 = first). The gateway only reports a value while the device is in Solar mode; in Intelligent mode the entity shows *unknown*, which is expected.
 
 Further information and help setting up dynamic tariffs can be found in the [neoom GRIID article in the neoom knowledge base](https://wissen.neoom.com).
 
@@ -206,6 +207,7 @@ Alle hier aufgelisteten Funktionen sind vollständig in der stabilen Hauptversio
 * **SG-Ready Modus (`OPERATING_MODE_SG_READY`):** Zeigt den Smart-Grid-Zustand von Wärmepumpen (Mode 1: Sperre, Mode 2: Normal, Mode 3: Empfehlung, Mode 4: Fest EIN). In der Regel stellt das BEAAM Gateway den Modus selbst je nach verfügbarer Energie ein. Eine Auswahlentität zum Umstellen gibt es nur, wenn das Gateway den Datenpunkt als steuerbar meldet; sonst ist der Modus ein reiner Sensor.
 * **Lademenge (`GRIID_CHARGING_ENERGY`):** Legt fest, wie viel Energie (in kWh) im intelligenten Modus geladen werden soll.
 * **Abfahrtszeit (`GRIID_EV_DEPARTURE_TIME`):** Bestimmt den Zielzeitpunkt, zu dem der Ladevorgang abgeschlossen sein muss (wird als native Time-Entität in Home Assistant bereitgestellt).
+* **Priorität (`PRIORITY`):** Reihenfolge, in der Geräte im Modus **Solar** den PV-Überschuss bekommen (1 = zuerst). Das Gateway liefert den Wert nur, solange das Gerät im Solar-Modus ist; im Modus Intelligent zeigt die Entität *unbekannt* – das ist so gewollt.
 
 Weiterführende Informationen und Hilfe zur Einrichtung dynamischer Tarife findest du im [neoom GRIID-Artikel in der neoom Wissensdatenbank](https://wissen.neoom.com).
 
