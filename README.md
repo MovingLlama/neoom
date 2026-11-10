@@ -35,7 +35,7 @@ All features listed below are fully included in the stable main version (branch 
 ### 🧪 Releases & Beta Testing
 
 * **Stable Releases:** Tagged releases following semantic versioning (e.g., `1.0.0`, `1.0.4`).
-* **Beta Pre-Releases:** Used to pre-test new features and bug fixes (e.g., `1.0.5-beta.1`). In HACS, enable **Show beta versions** on the integration to install pre-releases.
+* **Beta Pre-Releases:** Used to pre-test new features and bug fixes (e.g., `1.0.5-beta.1`). They are published as GitHub pre-releases and are only offered if you turn on the **Pre-release** switch (see [Installing a beta version](#en-beta)).
 
 ---
 
@@ -50,6 +50,7 @@ Various charging strategies and settings for your devices (such as battery and c
 * **SG-Ready Mode (`OPERATING_MODE_SG_READY`):** Shows the Smart Grid state of heat pumps (Mode 1: Forced OFF, Mode 2: Normal, Mode 3: Recommended ON, Mode 4: Forced ON). Usually the BEAAM Gateway sets this mode itself depending on available energy. A select entity to change it is only created if the gateway reports the data point as controllable; otherwise the mode is a read-only sensor.
 * **Charge Quantity (`GRIID_CHARGING_ENERGY`):** Defines how much energy (in kWh) should be charged in intelligent mode.
 * **Departure Time (`GRIID_EV_DEPARTURE_TIME`):** Sets the target time by which the charging process must be completed (provided as a native Time entity in Home Assistant).
+* **Priority (`PRIORITY`):** Order in which devices in **Solar** mode receive the solar surplus (1 = first). The gateway only reports a value while the device is in Solar mode; in Intelligent mode the entity shows *unknown*, which is expected.
 
 Further information and help setting up dynamic tariffs can be found in the [neoom GRIID article in the neoom knowledge base](https://wissen.neoom.com).
 
@@ -67,35 +68,51 @@ Before you start, you will need the following three pieces of information from y
 
 ### 🛠 Installation
 
-The easiest way to install is via [HACS](https://hacs.xyz/) (Home Assistant Community Store).
+Since Home Assistant **2026.11**, community integrations are installed via the built-in **Marketplace** (the successor of HACS). There is nothing extra to install.
 
-#### A. Installing the Stable Version
-1. Open **HACS** in Home Assistant.
-2. Go to **Integrations**.
-3. Click the three dots `...` in the top right and select **Custom repositories**.
-4. Add this repository URL: `https://github.com/MovingLlama/neoom`
-5. Select category **Integration**.
-6. Click "Add" and then download/install the integration from the list.
-7. ⚠️ **IMPORTANT:** Restart Home Assistant completely (`Settings` -> `System` -> `Restart`) for the changes to take effect.
+[![Open in the Home Assistant Marketplace](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=MovingLlama&repository=neoom&category=integration)
 
-#### B. Installing the Beta Version
-If you want to participate in beta tests:
-1. Open **HACS** -> **Integrations**.
-2. Find the already installed **neoom AI** integration (or add it as a Custom Repository as described above).
-3. Click the three dots `...` and select **Redownload**.
-4. Check the **Show beta versions** box.
-5. Select the desired beta version (e.g., `1.0.1-beta-1`) from the list and click **Download**.
-6. Restart Home Assistant completely.
+#### A. Installing via the Marketplace (Home Assistant 2026.11 or newer)
+1. Click the button above, or go to **Settings -> Marketplace** (administrators only).
+   * If **neoom AI** is not listed yet: select **Add from link** in the upper-right corner, enter `MovingLlama/neoom` (or `https://github.com/MovingLlama/neoom`) under **GitHub link** and select **Add**. If asked for a type, choose **Integration**. Adding from a link requires a GitHub connection (sign-in via device code, read-only access to public data).
+2. On first use, confirm the Marketplace warning (**I understand the risks**). Browsing works without it, installing does not.
+3. Open **neoom AI**, select **Install**, check the version and select **Install** again.
+4. The integration is loaded right away and the setup dialog opens – **no restart is needed** for the first installation. Continue with [Configuration](#en-config).
+
+<a name="en-beta"></a>
+#### B. Installing a beta version
+1. Go to **Settings -> Devices & services -> Marketplace** and open the entities of the **neoom AI** repository.
+2. The **Pre-release** switch is disabled by default: enable the entity first, then turn the switch on.
+3. Pre-releases (e.g. `1.0.5-beta.1`) are now offered as updates as long as they are newer than the latest stable release. Turn the switch off to return to stable releases with the next stable version.
+4. A specific version can also be installed via the three-dot menu of the repository page in the Marketplace -> **Install another version**.
+
+#### C. Updates
+* Available updates appear under **Settings -> Updates**, like the updates of Home Assistant itself (update entity of the Marketplace).
+* ⚠️ **After an update, restart Home Assistant** (`Settings` -> `System` -> `Restart`). A repair under **Settings -> System -> Repairs** reminds you and can restart for you.
+
+#### D. Coming from HACS?
+Nothing to do: on the first start of Home Assistant 2026.11, the Marketplace takes over installations, custom repositories and update entities from HACS automatically. neoom AI stays installed, keeps its entities and continues to receive updates.
+
+#### E. Home Assistant before 2026.11 (HACS)
+On older versions, install via [HACS](https://hacs.xyz/): **HACS -> ⋮ -> Custom repositories**, add `https://github.com/MovingLlama/neoom` with category **Integration**, download **neoom AI** and restart Home Assistant. Beta versions: **⋮ -> Redownload -> Show beta versions**. The integration requires Home Assistant 2024.12 or newer.
+
+#### F. Manual installation
+Download `neoom.zip` from the [latest release](https://github.com/MovingLlama/neoom/releases/latest), extract it to `config/custom_components/neoom/` and restart Home Assistant. Manual installations do not get update notifications.
 
 ---
 
+<a name="en-config"></a>
 ### ⚙️ Configuration
+
+[![Add integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=neoom)
+
+When installing via the Marketplace, the setup dialog opens automatically. Otherwise:
 1. Go to **Settings -> Devices & Services** in Home Assistant.
 2. Click **Add Integration** in the bottom right.
 3. Search for **neoom AI** in the list.
-4. Enter the required credentials (Token, Site ID, IP, and Key) and save.
+4. Enter the neoom AI token, select your site from the list, enter the BEAAM IP address and API key, and save.
 
-After successful setup, your devices and entities will appear automatically. New devices added to your neoom system are picked up within an hour, without a restart.
+After successful setup, your devices and entities will appear automatically. New devices added to your neoom system are picked up within about 5 minutes, without a restart.
 
 **Multiple sites:** Each site (with its BEAAM Gateway) is set up as its own integration entry. Simply add the integration again and select the next site; sites that are already set up are not offered again.
 
@@ -132,7 +149,7 @@ The integration automatically creates devices based on the hardware connected to
 ### 🐛 Troubleshooting
 
 **Error: "Invalid handler specified" when adding**
-* This happens if Home Assistant hasn't loaded the integration files into cache yet.
+* This happens if Home Assistant hasn't loaded the integration files yet (e.g. after a manual or HACS installation, or after an update without a restart).
 * Solution: Restart Home Assistant and clear your browser cache.
 
 **No real-time local data arriving (or entities unavailable)**
@@ -191,7 +208,7 @@ Alle hier aufgelisteten Funktionen sind vollständig in der stabilen Hauptversio
 ### 🧪 Releases & Beta-Tests
 
 * **Stabile Releases:** Offizielle Versionen nach Semantic Versioning (z. B. `1.0.0`, `1.0.4`).
-* **Beta Pre-Releases:** Vorabversionen zum Testen neuer Funktionen und Bugfixes (z. B. `1.0.5-beta.1`). In HACS kann dafür einfach das Häkchen bei **Beta-Versionen anzeigen** aktiviert werden.
+* **Beta Pre-Releases:** Vorabversionen zum Testen neuer Funktionen und Bugfixes (z. B. `1.0.5-beta.1`). Sie erscheinen auf GitHub als Pre-Release und werden nur angeboten, wenn der Schalter **Pre-release** aktiviert ist (siehe [Beta-Version installieren](#de-beta)).
 
 ---
 
@@ -206,6 +223,7 @@ Alle hier aufgelisteten Funktionen sind vollständig in der stabilen Hauptversio
 * **SG-Ready Modus (`OPERATING_MODE_SG_READY`):** Zeigt den Smart-Grid-Zustand von Wärmepumpen (Mode 1: Sperre, Mode 2: Normal, Mode 3: Empfehlung, Mode 4: Fest EIN). In der Regel stellt das BEAAM Gateway den Modus selbst je nach verfügbarer Energie ein. Eine Auswahlentität zum Umstellen gibt es nur, wenn das Gateway den Datenpunkt als steuerbar meldet; sonst ist der Modus ein reiner Sensor.
 * **Lademenge (`GRIID_CHARGING_ENERGY`):** Legt fest, wie viel Energie (in kWh) im intelligenten Modus geladen werden soll.
 * **Abfahrtszeit (`GRIID_EV_DEPARTURE_TIME`):** Bestimmt den Zielzeitpunkt, zu dem der Ladevorgang abgeschlossen sein muss (wird als native Time-Entität in Home Assistant bereitgestellt).
+* **Priorität (`PRIORITY`):** Reihenfolge, in der Geräte im Modus **Solar** den PV-Überschuss bekommen (1 = zuerst). Das Gateway liefert den Wert nur, solange das Gerät im Solar-Modus ist; im Modus Intelligent zeigt die Entität *unbekannt* – das ist so gewollt.
 
 Weiterführende Informationen und Hilfe zur Einrichtung dynamischer Tarife findest du im [neoom GRIID-Artikel in der neoom Wissensdatenbank](https://wissen.neoom.com).
 
@@ -223,36 +241,51 @@ Bevor Sie mit der Installation starten, benötigen Sie folgende drei Information
 
 ### 🛠 Installation
 
-Die einfachste Methode zur Installation ist über [HACS](https://hacs.xyz/) (Home Assistant Community Store).
+Seit Home Assistant **2026.11** werden Community-Integrationen über den eingebauten **Marketplace** installiert (der Nachfolger von HACS). Es muss nichts zusätzlich installiert werden.
 
-#### A. Stabile Version installieren
-1. Öffnen Sie **HACS** in Ihrem Home Assistant.
-2. Gehen Sie zum Reiter **Integrations**.
-3. Klicke oben rechts auf die drei Punkte `...` und wählen Sie **Custom repositories** (Benutzerdefinierte Repositories).
-4. Fügen Sie die URL dieses Repositories hinzu: `https://github.com/MovingLlama/neoom`
-5. Wählen Sie als Kategorie **Integration**.
-6. Klicken Sie auf "Hinzufügen" und anschließend in der Liste auf "Herunterladen" bzw. "Installieren".
-7. ⚠️ **WICHTIG:** Starten Sie Home Assistant komplett neu (`Einstellungen` -> `System` -> `Neu starten`), damit Home Assistant den neuen Code laden kann.
+[![Open in the Home Assistant Marketplace](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=MovingLlama&repository=neoom&category=integration)
 
+#### A. Installation über den Marketplace (Home Assistant 2026.11 oder neuer)
+1. Klicken Sie auf den Button oben oder gehen Sie zu **Einstellungen -> Marketplace** (nur für Administratoren).
+   * Falls **neoom AI** dort noch nicht gelistet ist: Wählen Sie oben rechts **Add from link** (Über Link hinzufügen), geben Sie unter **GitHub link** `MovingLlama/neoom` (oder `https://github.com/MovingLlama/neoom`) ein und wählen Sie **Add** (Hinzufügen). Falls nach dem Typ gefragt wird, wählen Sie **Integration**. Für das Hinzufügen über einen Link ist eine Verbindung mit GitHub nötig (Anmeldung per Gerätecode, nur Lesezugriff auf öffentliche Daten).
+2. Bestätigen Sie beim ersten Aufruf den Warnhinweis des Marketplace (**I understand the risks** / Ich verstehe die Risiken). Stöbern geht auch ohne, Installieren nicht.
+3. Öffnen Sie **neoom AI**, wählen Sie **Install** (Installieren), prüfen Sie die Version und wählen Sie erneut **Install**.
+4. Die Integration wird sofort geladen und der Einrichtungsdialog öffnet sich – **für die Erstinstallation ist kein Neustart nötig**. Weiter geht es mit der [Konfiguration](#de-config).
+
+<a name="de-beta"></a>
 #### B. Beta-Version installieren
-Falls Sie an Beta-Tests teilnehmen möchten:
-1. Öffnen Sie **HACS** -> **Integrations**.
-2. Suchen Sie nach der bereits installierten **neoom AI** Integration (oder fügen Sie sie wie oben beschrieben als Custom Repository hinzu).
-3. Klicken Sie auf die drei Punkte `...` der Integration und wählen Sie **Redownload** (Erneut herunterladen).
-4. Aktivieren Sie das Kontrollkästchen **Show beta versions** (Beta-Versionen anzeigen).
-5. Wählen Sie die gewünschte Beta-Version (z. B. `1.0.1-beta-1`) aus der Liste aus und klicken Sie auf **Herunterladen**.
-6. Starten Sie Home Assistant komplett neu.
+1. Gehen Sie zu **Einstellungen -> Geräte & Dienste -> Marketplace** und öffnen Sie die Entitäten des Repositorys **neoom AI**.
+2. Der Schalter **Pre-release** ist standardmäßig deaktiviert: Aktivieren Sie zuerst die Entität und schalten Sie den Schalter dann ein.
+3. Ab jetzt werden Vorabversionen (z. B. `1.0.5-beta.1`) als Update angeboten, solange sie neuer sind als das letzte stabile Release. Schalten Sie den Schalter wieder aus, um mit der nächsten stabilen Version zu den stabilen Releases zurückzukehren.
+4. Eine bestimmte Version lässt sich auch über das Drei-Punkte-Menü der Repository-Seite im Marketplace -> **Install another version** (Andere Version installieren) installieren.
+
+#### C. Updates
+* Verfügbare Updates erscheinen unter **Einstellungen -> Updates**, genau wie die Updates von Home Assistant selbst (Update-Entität des Marketplace).
+* ⚠️ **Nach einem Update Home Assistant neu starten** (`Einstellungen` -> `System` -> `Neu starten`). Eine Reparaturmeldung unter **Einstellungen -> System -> Reparaturen** erinnert daran und kann den Neustart auslösen.
+
+#### D. Umstieg von HACS
+Nichts zu tun: Beim ersten Start von Home Assistant 2026.11 übernimmt der Marketplace Installationen, benutzerdefinierte Repositories und Update-Entitäten automatisch aus HACS. neoom AI bleibt installiert, behält seine Entitäten und bekommt weiterhin Updates.
+
+#### E. Home Assistant vor 2026.11 (HACS)
+Bei älteren Versionen erfolgt die Installation über [HACS](https://hacs.xyz/): **HACS -> ⋮ -> Benutzerdefinierte Repositories**, `https://github.com/MovingLlama/neoom` mit Kategorie **Integration** hinzufügen, **neoom AI** herunterladen und Home Assistant neu starten. Beta-Versionen: **⋮ -> Erneut herunterladen -> Beta-Versionen anzeigen**. Die Integration benötigt Home Assistant 2024.12 oder neuer.
+
+#### F. Manuelle Installation
+Laden Sie `neoom.zip` aus dem [neuesten Release](https://github.com/MovingLlama/neoom/releases/latest) herunter, entpacken Sie es nach `config/custom_components/neoom/` und starten Sie Home Assistant neu. Manuelle Installationen erhalten keine Update-Hinweise.
 
 ---
 
+<a name="de-config"></a>
 ### ⚙️ Konfiguration
 
-1. Gehen Sie nach dem Neustart in Home Assistant zu **Einstellungen -> Geräte & Dienste**.
+[![Add integration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=neoom)
+
+Bei der Installation über den Marketplace öffnet sich der Einrichtungsdialog automatisch. Ansonsten:
+1. Gehen Sie in Home Assistant zu **Einstellungen -> Geräte & Dienste**.
 2. Klicken Sie unten rechts auf **Integration hinzufügen**.
 3. Suchen Sie in der Liste nach **neoom AI**.
-4. Geben Sie die erforderlichen Daten (Token, Site ID, IP und Key) in das Formular ein und speichern Sie.
+4. Geben Sie das neoom AI Token ein, wählen Sie Ihren Standort aus der Liste, tragen Sie IP-Adresse und API Key des BEAAM ein und speichern Sie.
 
-Nach erfolgreicher Einrichtung tauchen Ihre Geräte und Entitäten automatisch auf. Neue Geräte in Ihrem neoom-System werden innerhalb einer Stunde ohne Neustart erkannt.
+Nach erfolgreicher Einrichtung tauchen Ihre Geräte und Entitäten automatisch auf. Neue Geräte in Ihrem neoom-System werden innerhalb von etwa 5 Minuten ohne Neustart erkannt.
 
 **Mehrere Standorte:** Jeder Standort (Site) mit seinem BEAAM Gateway wird als eigener Integrationseintrag eingerichtet. Fügen Sie die Integration einfach erneut hinzu und wählen Sie den nächsten Standort; bereits eingerichtete Standorte werden nicht mehr angeboten.
 
@@ -289,7 +322,7 @@ Die Integration erstellt automatisch Geräte (Devices) basierend auf der an Ihr 
 ### 🐛 Fehlerbehebung (Troubleshooting)
 
 **Fehler: "Invalid handler specified" beim Hinzufügen**
-Dies passiert, wenn Home Assistant die neuen Integrationsdateien noch nicht in den Cache geladen hat.
+Dies passiert, wenn Home Assistant die Integrationsdateien noch nicht geladen hat (z. B. nach einer manuellen oder HACS-Installation oder nach einem Update ohne Neustart).
 * Lösung: Starten Sie Home Assistant neu (ggf. auch den Browser-Cache leeren).
 
 **Keine lokalen Echtzeit-Daten kommen an (oder Entitäten sind nicht verfügbar)**

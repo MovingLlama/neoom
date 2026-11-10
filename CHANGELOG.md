@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.7
+
+### Behoben
+- Diagnosedaten: In den Cloud-Daten standen noch die Koordinaten der Site (`lat`/`lng`), die Site-ID (Feld `id`) und die `organisation_id` im Klartext. Sie werden jetzt ebenfalls unkenntlich gemacht.
+
+### Doku
+- README: Die Priorität (`PRIORITY`) legt die Reihenfolge der Geräte im Solar-Modus fest. Im Modus Intelligent liefert das Gateway keinen Wert, die Entität zeigt dann „unbekannt“ (am echten Gateway bestätigt).
+
 ## 1.1.6
 
 ### Behoben

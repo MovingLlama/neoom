@@ -103,6 +103,7 @@ KNOWN_SETTINGS: dict[str, SettingSpec] = {
     "GRIID_CHARGING_ENERGY": SettingSpec(
         "number", name="Lademenge", unit="kWh", device_class="energy", max_value=1000, step=0.1, scale=1000
     ),
+    # Reihenfolge im Solar-Modus (1 = bekommt den Überschuss zuerst); nur im Solar-Modus gesetzt
     "PRIORITY": SettingSpec("number", max_value=100),
     "POWER_THRESHOLD_NORMAL_OP": SettingSpec("number", unit="W", device_class="power", max_value=50_000),
     "POWER_THRESHOLD_RECOMMENDED_OP": SettingSpec("number", unit="W", device_class="power", max_value=50_000),

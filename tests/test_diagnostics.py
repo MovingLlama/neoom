@@ -5,7 +5,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.neoom.const import DOMAIN
+from custom_components.neoom.const import CLOUD_API_URL, DOMAIN
 from custom_components.neoom.diagnostics import async_get_config_entry_diagnostics
 
 from .conftest import (
@@ -22,6 +22,21 @@ async def test_diagnostics_redact_credentials(hass: HomeAssistant, aioclient_moc
     """Zugangsdaten, IP, Site-ID und Seriennummern erscheinen nicht in den Diagnosedaten."""
     config = make_beaam_config()
     config["siteId"] = SITE_ID
+    # Die Cloud liefert zur Site u. a. ID, Organisation, Adresse und Koordinaten (Felder wie in der echten API)
+    aioclient_mock.get(
+        f"{CLOUD_API_URL}/sites/{SITE_ID}",
+        json={
+            "id": SITE_ID,
+            "name": "Familie Muster",
+            "organisation_id": "org-4711",
+            "address": "Musterweg 1",
+            "zip": "4020",
+            "city": "Linz",
+            "lat": "48.1234",
+            "lng": "14.5678",
+            "electricity_price": 15.45,
+        },
+    )
     mock_apis(
         aioclient_mock,
         config,
@@ -40,8 +55,12 @@ async def test_diagnostics_redact_credentials(hass: HomeAssistant, aioclient_moc
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
 
     text = str(diagnostics)
-    for secret in ("cloud-token", "beaam-key", BEAAM_IP, SITE_ID, "SN-12345", "Familie Muster"):
+    for secret in (
+        "cloud-token", "beaam-key", BEAAM_IP, SITE_ID, "SN-12345", "Familie Muster",
+        "org-4711", "Musterweg", "48.1234", "14.5678",
+    ):
         assert secret not in text, secret
     assert diagnostics["entry"]["data"]["beaam_key"] == REDACTED
     assert diagnostics["local"]["states"]["dp-inv-power"]["value"] == 100
+    assert diagnostics["cloud"]["data"]["site"]["electricity_price"] == 15.45
     assert INVERTER_ID in diagnostics["local"]["config"]["things"]
