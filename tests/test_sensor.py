@@ -372,7 +372,7 @@ async def test_select_shows_value_outside_option_list(hass: HomeAssistant, aiocl
     mock_apis(
         aioclient_mock,
         make_beaam_config(thing, include_defaults=False),
-        thing_states={"cp-1": [{"dataPointId": "dp-phase", "key": "PHASE_SWITCHING_MODE", "value": "THREE_PHASE"}]},
+        thing_states={"cp-1": [{"dataPointId": "dp-phase", "key": "PHASE_SWITCHING_MODE", "value": "TWO_PHASE"}]},
     )
     entry = MockConfigEntry(domain=DOMAIN, version=2, unique_id=SITE_ID, title="Haus", data=ENTRY_DATA)
     entry.add_to_hass(hass)
@@ -381,9 +381,9 @@ async def test_select_shows_value_outside_option_list(hass: HomeAssistant, aiocl
 
     entity_id = er.async_get(hass).async_get_entity_id("select", DOMAIN, "cp-1_dp-phase_select")
     state = hass.states.get(entity_id)
-    assert state.state == "three_phase"
+    assert state.state == "two_phase"
 
     await entry.runtime_data.local.async_refresh()
     await hass.async_block_till_done()
     options = hass.states.get(entity_id).attributes["options"]
-    assert options == ["automatic", "force_1_phase", "force_3_phase", "three_phase"]
+    assert options == ["automatic", "single_phase", "three_phase", "two_phase"]

@@ -13,7 +13,6 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import (
     ConfigEntryNotReady,
-    HomeAssistantError,
     ServiceValidationError,
 )
 from homeassistant.helpers import device_registry as dr
@@ -190,12 +189,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NeoomConfigEntry) -> boo
                     f"Wert für {key} passt nicht zum Datentyp {data_type}: {err}"
                 ) from err
 
-            try:
-                await loc_coord.async_ingest_state(thing_id, key, api_value)
-            except Exception as err:
-                raise HomeAssistantError(
-                    f"State-Ingest für {key} an Gerät {thing_id} fehlgeschlagen: {err}"
-                ) from err
+            await loc_coord.async_ingest_state(thing_id, key, api_value)
             sent = True
 
         if not sent:

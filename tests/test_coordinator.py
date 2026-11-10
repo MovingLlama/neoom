@@ -7,8 +7,8 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from aiohttp import ClientResponseError
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
@@ -71,12 +71,21 @@ async def test_send_setting_error_skips_refresh(hass: HomeAssistant, aioclient_m
     aioclient_mock.put(f"{THING_URL}/settings", status=400)
 
     with patch.object(local, "async_request_refresh", AsyncMock()) as refresh:
-        with pytest.raises(ClientResponseError):
+        with pytest.raises(HomeAssistantError, match="MAX_POWER = 5000 abgelehnt \\(HTTP 400"):
             await local.async_send_setting(INVERTER_ID, "MAX_POWER", 5000)
 
         _fire_after_delay(hass)
         await hass.async_block_till_done()
         refresh.assert_not_awaited()
+
+
+async def test_rejected_command_raises_readable_error(hass: HomeAssistant, aioclient_mock) -> None:
+    """Lehnt das Gateway einen Befehl ab, kommt eine lesbare Meldung statt eines rohen HTTP-Fehlers."""
+    _, local = await _setup(hass, aioclient_mock)
+    aioclient_mock.post(f"{THING_URL}/commands", status=500)
+
+    with pytest.raises(HomeAssistantError, match="Befehl MODE = FORCE_1_PHASE abgelehnt \\(HTTP 500"):
+        await local.async_send_command(INVERTER_ID, "MODE", "FORCE_1_PHASE")
 
 
 async def test_unload_cancels_pending_setting_refresh(hass: HomeAssistant, aioclient_mock) -> None:

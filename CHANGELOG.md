@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.8b4 (Beta)
+
+### Behoben
+- **Lesbare Fehlermeldung, wenn das Gateway einen Wert ablehnt.** Bisher kam die Ablehnung einer Einstellung, eines Befehls oder eines State-Ingests als roher HTTP-Fehler in Home Assistant an (in der Oberfläche „Unbekannter Fehler“, über die API HTTP 500). Jetzt nennt die Meldung Schlüssel, Wert und den Status des Gateways.
+- **Optionen der Phasenumschaltung (`PHASE_SWITCHING_MODE`) entsprechen den Werten des Gateways:** „Automatisch“, „1-phasig“ (`SINGLE_PHASE`) und „3-phasig“ (`THREE_PHASE`). Die bisherigen Optionen „1 Phase erzwingen“ und „3 Phasen erzwingen“ lehnte das Gateway ab. `AUTOMATIC` und `THREE_PHASE` sind am Gateway bestätigt, `SINGLE_PHASE` noch nicht.
+
+### Bekannt
+- Das Schreiben von „Selected EV“ (`EV_SELECTED`) lehnt das Gateway (API 2.15.0) derzeit mit „400 Bad Request“ ab, auch mit dem bereits gesetzten Wert.
+
 ## 1.1.8b3 (Beta)
 
 ### Behoben

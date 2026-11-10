@@ -15,7 +15,7 @@ from typing import Any
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import (
@@ -44,6 +44,15 @@ from .helpers import (
 
 class ThingFetchError(Exception):
     """Das Gateway hat die Abfrage eines Things nicht mit HTTP 200 beantwortet."""
+
+
+def _describe_send_error(what: str, key: str, value: Any, err: Exception) -> str:
+    """Beschreibt einen Fehler beim Senden an das Gateway so, dass er in der Oberfläche lesbar ist."""
+    if isinstance(err, aiohttp.ClientResponseError):
+        return f"Das BEAAM Gateway hat {what} {key} = {value} abgelehnt (HTTP {err.status} {err.message})."
+    if isinstance(err, TimeoutError):
+        return f"Das BEAAM Gateway hat auf {what} {key} nicht rechtzeitig geantwortet."
+    return f"{what} {key} konnte nicht an das BEAAM Gateway gesendet werden: {err}"
 
 
 class NeoomCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -465,9 +474,9 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 async with self.session.post(url, headers=headers, json=payload) as resp:
                     resp.raise_for_status()
                     LOGGER.info("Befehl an BEAAM erfolgreich gesendet: %s -> %s", key, value)
-        except Exception as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             LOGGER.error("Schwerwiegender Fehler beim Senden des Befehls an '%s': %s", thing_id, err)
-            raise
+            raise HomeAssistantError(_describe_send_error("Befehl", key, value, err)) from err
 
         # Außerhalb des Timeouts: Ein langsamer Refresh macht den gesendeten Befehl nicht ungültig
         await self.async_request_refresh()
@@ -494,9 +503,9 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 async with self.session.post(url, headers=headers, json=payload) as resp:
                     resp.raise_for_status()
                     LOGGER.info("State-Ingest an BEAAM erfolgreich gesendet: %s -> %s", key, value)
-        except Exception as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             LOGGER.error("Schwerwiegender Fehler beim Senden des States an '%s': %s", thing_id, err)
-            raise
+            raise HomeAssistantError(_describe_send_error("State-Ingest", key, value, err)) from err
 
         # Außerhalb des Timeouts: Ein langsamer Refresh macht den gesendeten Wert nicht ungültig
         await self.async_request_refresh()
@@ -547,9 +556,9 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         if thing_id not in self.data["settings"]:
                             self.data["settings"][thing_id] = {}
                         self.data["settings"][thing_id][key] = api_value
-        except Exception as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             LOGGER.error("Schwerwiegender Fehler beim Senden der Einstellung an '%s': %s", thing_id, err)
-            raise
+            raise HomeAssistantError(_describe_send_error("Einstellung", key, api_value, err)) from err
 
         # Die Einstellung gilt als gesetzt, sobald das Gateway sie angenommen hat. Der neue Wert
         # wird sofort angezeigt und kurz darauf im Hintergrund vom Gateway bestätigt.
