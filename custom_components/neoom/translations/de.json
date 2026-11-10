@@ -115,7 +115,6 @@
         "name": "Phasenumschaltung",
         "state": {
           "automatic": "Auto",
-          "single_phase": "1-phasig",
           "one_phase": "1-phasig",
           "three_phase": "3-phasig"
         }

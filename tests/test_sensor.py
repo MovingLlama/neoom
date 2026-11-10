@@ -386,4 +386,4 @@ async def test_select_shows_value_outside_option_list(hass: HomeAssistant, aiocl
     await entry.runtime_data.local.async_refresh()
     await hass.async_block_till_done()
     options = hass.states.get(entity_id).attributes["options"]
-    assert options == ["automatic", "single_phase", "three_phase", "two_phase"]
+    assert options == ["automatic", "one_phase", "three_phase", "two_phase"]

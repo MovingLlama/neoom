@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.8b5 (Beta)
+
+### Behoben
+- Die Option „1-phasig“ der Phasenumschaltung sendet `ONE_PHASE`. Das in 1.1.8b4 gesendete `SINGLE_PHASE` lehnte das Gateway ab. Damit sind alle drei Optionen („Automatisch“, „1-phasig“, „3-phasig“) am Gateway bestätigt.
+
 ## 1.1.8b4 (Beta)
 
 ### Behoben

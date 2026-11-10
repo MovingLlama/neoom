@@ -21,10 +21,10 @@ from .helpers import classify_setting, get_friendly_thing_name, is_ingest_entity
 # Da die API uns leider keine Liste der erlaubten Werte in der Konfiguration
 # mitliefert, müssen wir diese hier ("hardcoded") definieren.
 # Neue umschaltbare Parameter müssen hier ergänzt werden.
-# PHASE_SWITCHING_MODE: AUTOMATIC und THREE_PHASE nimmt das Gateway an (FORCE_1_PHASE/FORCE_3_PHASE
-# lehnt es ab); SINGLE_PHASE ist analog zu THREE_PHASE benannt und am Gateway nicht bestätigt.
+# PHASE_SWITCHING_MODE: Diese drei Werte meldet das Gateway und nimmt sie als Befehl an
+# (FORCE_1_PHASE, FORCE_3_PHASE und SINGLE_PHASE lehnt es ab).
 KNOWN_OPTIONS: dict[str, list[str]] = {
-    "PHASE_SWITCHING_MODE": ["automatic", "single_phase", "three_phase"],
+    "PHASE_SWITCHING_MODE": ["automatic", "one_phase", "three_phase"],
     "OPERATING_MODE_SG_READY": ["1", "2", "3", "4"],
 }
 

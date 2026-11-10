@@ -115,7 +115,6 @@
         "name": "Phase switching mode",
         "state": {
           "automatic": "Auto",
-          "single_phase": "1-phase",
           "one_phase": "1-phase",
           "three_phase": "3-phase"
         }
