@@ -7,9 +7,16 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.neoom.const import DOMAIN
+from custom_components.neoom.const import CLOUD_API_URL, DOMAIN
 
-from .conftest import ENTRY_DATA, SITE_ID, get_device, make_beaam_config, mock_apis
+from .conftest import (
+    ENTRY_DATA,
+    INVERTER_ID,
+    SITE_ID,
+    get_device,
+    make_beaam_config,
+    mock_apis,
+)
 
 BATTERY_ID = "battery-1"
 BATTERY_THING = {
@@ -162,3 +169,216 @@ async def test_cloud_device_named_after_site(hass: HomeAssistant, aioclient_mock
 
     device = get_device(hass, (DOMAIN, SITE_ID), entry.entry_id)
     assert device.name == "neoom AI Cloud (Haus)"
+
+
+CLASS_THING = {
+    "hp-1": {
+        "type": "HEAT_PUMP",
+        "name": "Wärmepumpe",
+        "dataPoints": {
+            "dp-cell-no": {"key": "MAX_CELL_TEMPERATURE_NUMBER", "dataType": "NUMBER", "unitOfMeasure": "None"},
+            "dp-start": {"key": "CHARGING_PROCESS_START_TIME", "dataType": "STRING", "unitOfMeasure": "None"},
+            "dp-flow": {"key": "FLOW_TEMPERATURE", "dataType": "NUMBER", "unitOfMeasure": "°C"},
+            "dp-time": {"key": "CHARGING_TIME", "dataType": "NUMBER", "unitOfMeasure": "s"},
+            "dp-reactive": {"key": "REACTIVE_POWER", "dataType": "NUMBER", "unitOfMeasure": "VAr"},
+            "dp-apparent": {"key": "APPARENT_POWER", "dataType": "NUMBER", "unitOfMeasure": "VA"},
+            "dp-pressure": {"key": "PRESSURE", "dataType": "NUMBER", "unitOfMeasure": "Pa"},
+        },
+    }
+}
+
+
+async def test_device_class_follows_unit_not_key(hass: HomeAssistant, aioclient_mock) -> None:
+    """Geräteklassen richten sich nach der Einheit; der Schlüsselname allein genügt nicht."""
+    mock_apis(
+        aioclient_mock,
+        make_beaam_config(CLASS_THING, include_defaults=False),
+        thing_states={
+            "hp-1": [
+                {"dataPointId": "dp-cell-no", "key": "MAX_CELL_TEMPERATURE_NUMBER", "value": 7},
+                {"dataPointId": "dp-start", "key": "CHARGING_PROCESS_START_TIME", "value": "2026-11-10T08:00:00Z"},
+                {"dataPointId": "dp-flow", "key": "FLOW_TEMPERATURE", "value": 35.5},
+                {"dataPointId": "dp-time", "key": "CHARGING_TIME", "value": 120},
+                {"dataPointId": "dp-reactive", "key": "REACTIVE_POWER", "value": 12},
+                {"dataPointId": "dp-apparent", "key": "APPARENT_POWER", "value": 34},
+                {"dataPointId": "dp-pressure", "key": "PRESSURE", "value": 101325},
+            ]
+        },
+    )
+    entry = MockConfigEntry(domain=DOMAIN, version=2, unique_id=SITE_ID, title="Haus", data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    def _state(dp_id: str):
+        return hass.states.get(_entity_id(hass, f"hp-1_{dp_id}"))
+
+    cell_no = _state("dp-cell-no")
+    assert cell_no.state == "7.0"
+    assert "device_class" not in cell_no.attributes
+
+    start = _state("dp-start")
+    assert start.state == "2026-11-10T08:00:00Z"
+    assert "device_class" not in start.attributes
+    assert "state_class" not in start.attributes
+
+    flow = _state("dp-flow")
+    assert flow.attributes["device_class"] == SensorDeviceClass.TEMPERATURE
+    assert flow.attributes["unit_of_measurement"] == "°C"
+    assert _state("dp-time").attributes["device_class"] == SensorDeviceClass.DURATION
+
+    reactive = _state("dp-reactive")
+    assert reactive.attributes["device_class"] == SensorDeviceClass.REACTIVE_POWER
+    assert reactive.attributes["unit_of_measurement"] == "var"
+    assert _state("dp-apparent").attributes["device_class"] == SensorDeviceClass.APPARENT_POWER
+    assert _state("dp-pressure").attributes["device_class"] == SensorDeviceClass.PRESSURE
+
+
+async def test_cloud_sensors(hass: HomeAssistant, aioclient_mock) -> None:
+    """Tarife haben eine Statusklasse; CO2-Faktor, Netzanschluss und Online-Zähler kommen aus der Cloud."""
+    config = make_beaam_config()
+    aioclient_mock.get(
+        f"{CLOUD_API_URL}/sites/{SITE_ID}",
+        json={"electricity_price": 25.5, "co2_factor": 0.2},
+    )
+    aioclient_mock.get(
+        f"{CLOUD_API_URL}/sites/{SITE_ID}/energy-flow/latest",
+        json={
+            "gateways_online_state": "ONLINE",
+            "producers_online_count": 1,
+            "producers_total_count": 2,
+            "max_network_utilization": 11000,
+            "total_storage_capacity": 23000,
+        },
+    )
+    mock_apis(aioclient_mock, config)
+    entry = MockConfigEntry(domain=DOMAIN, version=2, unique_id=SITE_ID, title="Haus", data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    price = hass.states.get(_entity_id(hass, f"{SITE_ID}_electricity_price"))
+    assert price.state == "25.5"
+    assert price.attributes["state_class"] == SensorStateClass.MEASUREMENT
+
+    assert hass.states.get(_entity_id(hass, f"{SITE_ID}_co2_factor")).state == "0.2"
+    grid_limit = hass.states.get(_entity_id(hass, f"{SITE_ID}_max_network_utilization"))
+    assert grid_limit.state == "11000"
+    assert grid_limit.attributes["device_class"] == SensorDeviceClass.POWER
+
+    registry = er.async_get(hass)
+    producers = registry.async_get(_entity_id(hass, f"{SITE_ID}_producers_online_count"))
+    assert producers.disabled_by is er.RegistryEntryDisabler.INTEGRATION
+
+    capacity = hass.states.get(_entity_id(hass, f"{SITE_ID}_total_storage_capacity"))
+    assert capacity.attributes["device_class"] == SensorDeviceClass.ENERGY_STORAGE
+    # Felder, die die Cloud für diese Site nicht liefert, ergeben keine Entität
+    assert registry.async_get_entity_id("sensor", DOMAIN, f"{SITE_ID}_storages_max_power") is None
+
+
+async def test_optional_cloud_sensor_removed_when_field_missing(hass: HomeAssistant, aioclient_mock) -> None:
+    """Liefert die Cloud ein optionales Feld nicht, wird eine früher angelegte Entität entfernt."""
+    mock_apis(aioclient_mock, make_beaam_config())
+    entry = MockConfigEntry(domain=DOMAIN, version=2, unique_id=SITE_ID, title="Haus", data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    registry.async_get_or_create("sensor", DOMAIN, f"{SITE_ID}_co2_factor", config_entry=entry)
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    assert registry.async_get_entity_id("sensor", DOMAIN, f"{SITE_ID}_co2_factor") is None
+    assert registry.async_get_entity_id("sensor", DOMAIN, f"{SITE_ID}_electricity_price")
+
+
+async def test_thermal_energy_is_total(hass: HomeAssistant, aioclient_mock) -> None:
+    """Errechnete Wärmemengen schwanken leicht und sind daher TOTAL statt TOTAL_INCREASING."""
+    thing = {
+        "hp-1": {
+            "type": "HEAT_PUMP",
+            "dataPoints": {"dp-thermal": {"key": "THERMAL_ENERGY", "dataType": "NUMBER", "unitOfMeasure": "Wh"}},
+        }
+    }
+    mock_apis(
+        aioclient_mock,
+        make_beaam_config(thing, include_defaults=False),
+        thing_states={"hp-1": [{"dataPointId": "dp-thermal", "key": "THERMAL_ENERGY", "value": 1394901.38}]},
+    )
+    entry = MockConfigEntry(domain=DOMAIN, version=2, unique_id=SITE_ID, title="Haus", data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    state = hass.states.get(_entity_id(hass, "hp-1_dp-thermal"))
+    assert state.attributes["state_class"] == SensorStateClass.TOTAL
+
+
+async def test_read_only_setting_sensors(hass: HomeAssistant, aioclient_mock) -> None:
+    """Einstellungen ohne Eingabe-Plattform erscheinen nur lesend als Sensor, auch EV_SELECTED."""
+    mock_apis(
+        aioclient_mock,
+        make_beaam_config(),
+        thing_settings={
+            INVERTER_ID: [
+                {"key": "EV_SELECTED", "value": "ev-123"},
+                {"key": "GRID_FEED_IN_PRIORITIZATION_TIMES", "value": "08:00-12:00"},
+                {"key": "SOME_LABEL", "value": "abc"},
+                {"key": "PRIORITY", "value": "1"},
+            ]
+        },
+    )
+    entry = MockConfigEntry(domain=DOMAIN, version=2, unique_id=SITE_ID, title="Haus", data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    # Textfeld aus 1.1.8b2 bis b7, das der Sensor wieder ablöst
+    registry.async_get_or_create("text", DOMAIN, f"{INVERTER_ID}_EV_SELECTED_text", config_entry=entry)
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    times = hass.states.get(_entity_id(hass, f"{INVERTER_ID}_GRID_FEED_IN_PRIORITIZATION_TIMES_setting"))
+    assert times.state == "08:00-12:00"
+
+    selected_ev = hass.states.get(_entity_id(hass, f"{INVERTER_ID}_EV_SELECTED_setting"))
+    assert selected_ev.state == "ev-123"
+    assert selected_ev.attributes["icon"] == "mdi:car-electric"
+    assert registry.async_get_entity_id("text", DOMAIN, f"{INVERTER_ID}_EV_SELECTED_text") is None
+
+    unknown = registry.async_get(_entity_id(hass, f"{INVERTER_ID}_SOME_LABEL_setting"))
+    assert unknown.disabled_by is er.RegistryEntryDisabler.INTEGRATION
+    # Einstellungen mit eigener Plattform bekommen keinen zusätzlichen Sensor
+    assert registry.async_get_entity_id("sensor", DOMAIN, f"{INVERTER_ID}_PRIORITY_setting") is None
+
+
+async def test_select_shows_value_outside_option_list(hass: HomeAssistant, aioclient_mock) -> None:
+    """Meldet das Gateway einen Wert außerhalb der Optionsliste, wird er angezeigt statt „unbekannt“."""
+    thing = {
+        "cp-1": {
+            "type": "CHARGING_POINT_AC",
+            "dataPoints": {
+                "dp-phase": {
+                    "key": "PHASE_SWITCHING_MODE",
+                    "dataType": "STRING",
+                    "unitOfMeasure": "None",
+                    "controllable": True,
+                }
+            },
+        }
+    }
+    mock_apis(
+        aioclient_mock,
+        make_beaam_config(thing, include_defaults=False),
+        thing_states={"cp-1": [{"dataPointId": "dp-phase", "key": "PHASE_SWITCHING_MODE", "value": "TWO_PHASE"}]},
+    )
+    entry = MockConfigEntry(domain=DOMAIN, version=2, unique_id=SITE_ID, title="Haus", data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    entity_id = er.async_get(hass).async_get_entity_id("select", DOMAIN, "cp-1_dp-phase_select")
+    state = hass.states.get(entity_id)
+    assert state.state == "two_phase"
+
+    await entry.runtime_data.local.async_refresh()
+    await hass.async_block_till_done()
+    options = hass.states.get(entity_id).attributes["options"]
+    assert options == ["automatic", "one_phase", "three_phase", "two_phase"]

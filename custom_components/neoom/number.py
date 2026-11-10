@@ -32,6 +32,10 @@ from .helpers import classify_setting, get_friendly_thing_name, is_ingest_entity
 # sollten nicht manuell von einem übergeordneten System wie Home Assistant permanent überschrieben werden.
 IGNORE_KEYS: list[str] = ["MIN_SOC", "MAX_POWER_CHARGE_FALLBACK", "TARGET_POWER"]
 
+# Diese Einstellungen liefert das Gateway nur in bestimmten Betriebsmodi (PRIORITY z.B. nicht bei
+# GRIID_CONTROLLED). Ohne Wert ist die Entität nicht verfügbar statt "unbekannt" und bedienbar.
+VALUE_REQUIRED_SETTINGS: tuple[str, ...] = ("PRIORITY",)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -352,6 +356,17 @@ class NeoomSettingNumber(CoordinatorEntity, NumberEntity):
         self._attr_native_max_value = spec.max_value
         self._attr_native_step = spec.step
         self._attr_mode = NumberMode.BOX
+
+    @property
+    def available(self) -> bool:
+        """Einstellungen aus VALUE_REQUIRED_SETTINGS sind ohne Wert vom Gateway nicht verfügbar."""
+        if not super().available:
+            return False
+        if self._setting_key not in VALUE_REQUIRED_SETTINGS:
+            return True
+
+        settings_map = self.coordinator.data.get("settings", {}) if self.coordinator.data else {}
+        return settings_map.get(self._thing_id, {}).get(self._setting_key) is not None
 
     @property
     def native_value(self) -> float | None:

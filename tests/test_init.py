@@ -2,8 +2,10 @@
 
 from unittest.mock import patch
 
+import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
@@ -16,6 +18,7 @@ from custom_components.neoom.const import (
     CONF_SCAN_INTERVAL_LOCAL,
     DOMAIN,
 )
+from custom_components.neoom.helpers import is_generic_thing
 
 from .conftest import (
     BEAAM_IP,
@@ -216,5 +219,47 @@ async def test_ingest_state_service_posts_to_gateway(hass: HomeAssistant, aiocli
 
     posts = [call for call in aioclient_mock.mock_calls if call[0] == "POST" and str(call[1]) == url]
     assert len(posts) == 1
-    # Das Dienst-Schema (cv.string vor Coerce(float)) liefert den Wert als Text
-    assert posts[0][2] == [{"key": "POWER", "value": "42"}]
+    # Der Wert wird im Typ des Datenpunkts (NUMBER) gesendet
+    assert posts[0][2] == [{"key": "POWER", "value": 42}]
+
+
+async def test_ingest_state_service_converts_text_to_number(hass: HomeAssistant, aioclient_mock) -> None:
+    """Text aus der Oberfläche wird für Zahlen-Datenpunkte als Zahl gesendet."""
+    mock_apis(aioclient_mock, make_beaam_config())
+    entry = MockConfigEntry(domain=DOMAIN, version=2, unique_id=SITE_ID, data=ENTRY_DATA)
+    await _setup(hass, entry)
+    url = f"http://{BEAAM_IP}/api/v1/things/{GENERIC_ID}/states"
+    aioclient_mock.post(url, json={})
+
+    await hass.services.async_call(
+        DOMAIN, "ingest_state", {"thing_id": GENERIC_ID, "key": "POWER", "value": "250.5"}, blocking=True
+    )
+
+    posts = [call for call in aioclient_mock.mock_calls if call[0] == "POST" and str(call[1]) == url]
+    assert posts[0][2] == [{"key": "POWER", "value": 250.5}]
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN, "ingest_state", {"thing_id": GENERIC_ID, "key": "POWER", "value": "abc"}, blocking=True
+        )
+    assert len([call for call in aioclient_mock.mock_calls if call[0] == "POST"]) == 1
+
+
+async def test_ingest_state_service_reports_gateway_error(hass: HomeAssistant, aioclient_mock) -> None:
+    """Lehnt das Gateway den Wert ab, schlägt der Dienstaufruf fehl statt nur zu loggen."""
+    mock_apis(aioclient_mock, make_beaam_config())
+    entry = MockConfigEntry(domain=DOMAIN, version=2, unique_id=SITE_ID, data=ENTRY_DATA)
+    await _setup(hass, entry)
+    aioclient_mock.post(f"http://{BEAAM_IP}/api/v1/things/{GENERIC_ID}/states", status=400)
+
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(
+            DOMAIN, "ingest_state", {"thing_id": GENERIC_ID, "key": "POWER", "value": 1}, blocking=True
+        )
+
+
+def test_generic_thing_detection() -> None:
+    """Generic Devices werden am Typ oder am Feld genericDataIngest erkannt."""
+    assert is_generic_thing({"type": "GENERIC_METER"})
+    assert is_generic_thing({"type": "ELECTRICITY_METER_AC", "genericDataIngest": {}})
+    assert not is_generic_thing({"type": "ELECTRICITY_METER_AC"})

@@ -63,6 +63,11 @@ CONFIG_REFRESH_INTERVAL: int = 300
 # Wartezeit in Sekunden bis zum nächsten Versuch, wenn das Neuladen der Gerätestruktur fehlschlägt.
 CONFIG_RETRY_INTERVAL: int = 60
 
+# Intervall in Sekunden, in dem die Einstellungen (things/{id}/settings) abgefragt werden. Sie ändern
+# sich nur durch den Benutzer (hier oder in der neoom App); Änderungen aus Home Assistant werden
+# unabhängig davon sofort abgeglichen.
+SETTINGS_REFRESH_INTERVAL: int = 60
+
 # Wartezeit in Sekunden, bis nach einer Einstellungsänderung neu abgefragt wird. Das Gateway
 # übernimmt Einstellungen mit kurzer Verzögerung.
 SETTING_REFRESH_DELAY: float = 1.5

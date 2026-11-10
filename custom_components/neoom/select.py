@@ -21,8 +21,10 @@ from .helpers import classify_setting, get_friendly_thing_name, is_ingest_entity
 # Da die API uns leider keine Liste der erlaubten Werte in der Konfiguration
 # mitliefert, müssen wir diese hier ("hardcoded") definieren.
 # Neue umschaltbare Parameter müssen hier ergänzt werden.
+# PHASE_SWITCHING_MODE: Diese drei Werte meldet das Gateway und nimmt sie als Befehl an
+# (FORCE_1_PHASE, FORCE_3_PHASE und SINGLE_PHASE lehnt es ab).
 KNOWN_OPTIONS: dict[str, list[str]] = {
-    "PHASE_SWITCHING_MODE": ["automatic", "force_1_phase", "force_3_phase"],
+    "PHASE_SWITCHING_MODE": ["automatic", "one_phase", "three_phase"],
     "OPERATING_MODE_SG_READY": ["1", "2", "3", "4"],
 }
 
@@ -179,8 +181,9 @@ class NeoomLocalSelect(CoordinatorEntity, SelectEntity):
         self._dp_id = dp_id
         self._key: str = dp_data.get("key", "")
 
-        # Weist Home Assistant die verfügbaren Dropdown-Optionen zu
-        self._attr_options: list[str] = options
+        # Weist Home Assistant die verfügbaren Dropdown-Optionen zu (Kopie: die Liste kann je
+        # Entität um vom Gateway gemeldete Werte wachsen)
+        self._attr_options: list[str] = list(options)
 
         beaam_config = coordinator.data.get("config", {}) if coordinator.data else {}
         self._friendly_thing_name = get_friendly_thing_name(beaam_config, thing_id, self._thing_type)
@@ -221,7 +224,10 @@ class NeoomLocalSelect(CoordinatorEntity, SelectEntity):
                 for opt in self._attr_options:
                     if opt.lower() == val_str:
                         return opt
-                return str(val)
+                # Meldet das Gateway einen Wert, der nicht in der Liste steht (z. B. THREE_PHASE bei
+                # PHASE_SWITCHING_MODE), wird er ergänzt. Sonst wäre der Zustand "unbekannt".
+                self._attr_options = [*self._attr_options, val_str]
+                return val_str
         return None
 
     async def async_select_option(self, option: str) -> None:

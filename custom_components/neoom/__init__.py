@@ -11,7 +11,10 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import (
+    ConfigEntryNotReady,
+    ServiceValidationError,
+)
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
@@ -34,11 +37,17 @@ from .coordinator import (
     NeoomData,
     NeoomLocalCoordinator,
 )
-from .helpers import gateway_identifier, is_generic_thing, virtual_sg_ready_dp_id
+from .helpers import (
+    coerce_ingest_value,
+    gateway_identifier,
+    is_generic_thing,
+    virtual_sg_ready_dp_id,
+)
 
 # Definiere die unterstützten Plattformen, die von dieser Integration geladen werden.
 # Wir unterstützen Sensoren (nur-lesen), Number-Entitäten (Zahleneingabe/Slider),
-# Select-Entitäten (Dropdown-Menüs), Switch-Entitäten (Schalter), Time-Entitäten (Uhrzeiten)
+# Select-Entitäten (Dropdown-Menüs), Switch-Entitäten (Schalter), Text-Entitäten (Kennungen),
+# Time-Entitäten (Uhrzeiten)
 # und Binärsensoren (z. B. Verbindung, Notstrom aktiv).
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
@@ -151,26 +160,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: NeoomConfigEntry) -> boo
         value = call.data.get("value")
 
         # Sende den Wert an das zuständige BEAAM Gateway
-        sent = False
         # Nicht async_loaded_entries: das gibt es erst ab HA 2025.1 (hacs.json erlaubt 2024.12)
         loaded_entries: list[NeoomConfigEntry] = [
             loaded
             for loaded in hass.config_entries.async_entries(DOMAIN)
             if loaded.state is ConfigEntryState.LOADED
         ]
+        sent = False
         for loaded_entry in loaded_entries:
             loc_coord = loaded_entry.runtime_data.local
             # Prüfe, ob das Thing diesem Gateway bekannt ist, oder sende wenn nur 1 Gateway existiert
             known_things = (loc_coord.beaam_config or {}).get("things", {})
-            if thing_id in known_things or len(loaded_entries) == 1:
-                try:
-                    await loc_coord.async_ingest_state(thing_id, key, value)
-                    sent = True
-                except Exception as err:
-                    LOGGER.error("Fehler beim Senden von State-Ingest für Eintrag %s: %s", loaded_entry.entry_id, err)
+            if thing_id not in known_things and len(loaded_entries) != 1:
+                continue
+
+            # Den Wert im Typ des Datenpunkts senden (aus der Oberfläche kommt er als Text)
+            thing = known_things.get(thing_id)
+            datapoints = thing.get("dataPoints", {}) if isinstance(thing, dict) else {}
+            data_type = next(
+                (dp.get("dataType") for dp in datapoints.values() if isinstance(dp, dict) and dp.get("key") == key),
+                None,
+            )
+            try:
+                api_value = coerce_ingest_value(data_type, value)
+            except ValueError as err:
+                raise ServiceValidationError(
+                    f"Wert für {key} passt nicht zum Datentyp {data_type}: {err}"
+                ) from err
+
+            await loc_coord.async_ingest_state(thing_id, key, api_value)
+            sent = True
 
         if not sent:
-            LOGGER.warning("Thing '%s' wurde in keinem konfigurierten BEAAM Gateway gefunden.", thing_id)
+            raise ServiceValidationError(
+                f"Thing '{thing_id}' wurde in keinem konfigurierten BEAAM Gateway gefunden."
+            )
 
     if not hass.services.has_service(DOMAIN, "ingest_state"):
         hass.services.async_register(
@@ -180,7 +204,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: NeoomConfigEntry) -> boo
             schema=vol.Schema({
                 vol.Required("thing_id"): cv.matches_regex(r"^[a-zA-Z0-9_-]+$"),
                 vol.Required("key"): cv.matches_regex(r"^[a-zA-Z0-9_-]+$"),
-                vol.Required("value"): vol.Any(cv.string, vol.Coerce(float)),
+                # Typ erhalten: Zahlen und Wahrheitswerte nicht in Text umwandeln
+                vol.Required("value"): vol.Any(bool, int, float, cv.string),
             })
         )
 

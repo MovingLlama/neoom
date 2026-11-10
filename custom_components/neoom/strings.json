@@ -115,8 +115,8 @@
         "name": "Phase switching mode",
         "state": {
           "automatic": "Auto",
-          "force_1_phase": "Force 1-Phase",
-          "force_3_phase": "Force 3-Phase"
+          "one_phase": "1-phase",
+          "three_phase": "3-phase"
         }
       }
     }

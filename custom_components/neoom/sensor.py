@@ -5,6 +5,7 @@ und dem lokalen BEAAM Gateway in Home Assistant anzeigen.
 """
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -14,21 +15,31 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import (
     PERCENTAGE,
+    EntityCategory,
+    UnitOfApparentPower,
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
     UnitOfEnergy,
     UnitOfFrequency,
     UnitOfPower,
+    UnitOfPressure,
+    UnitOfReactivePower,
     UnitOfTemperature,
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import NeoomCloudCoordinator, NeoomConfigEntry, NeoomLocalCoordinator
-from .helpers import array_item_type, find_state, get_friendly_thing_name
+from .helpers import (
+    array_item_type,
+    classify_setting,
+    find_state,
+    get_friendly_thing_name,
+)
 
 # Pseudo-Thing-ID für die standortweiten Energiefluss-Datenpunkte des BEAAM Gateways.
 # Entspricht dem Präfix, unter dem der Koordinator die Werte aus site/state ablegt.
@@ -40,7 +51,9 @@ BATTERY_LEVEL_INDICATORS = ("SOC", "STATE_OF_CHARGE")
 # Schlüssel-Bestandteile von Energiewerten, die das Gateway aus anderen Zählern
 # berechnet (z.B. ENERGY_CONSUMED_CALC, ENERGY_APPLIANCES). Solche Bilanzen können
 # sinken oder negativ sein und sind daher keine stetig steigenden Zählerstände.
-DERIVED_ENERGY_INDICATORS = ("_CALC", "APPLIANCES")
+# Dasselbe gilt für Wärmemengen der Wärmepumpe (THERMAL_ENERGY, HEATING_ENERGY, COOLING_ENERGY),
+# die das Gerät aus Durchfluss und Temperaturen errechnet und die leicht schwanken.
+DERIVED_ENERGY_INDICATORS = ("_CALC", "APPLIANCES", "THERMAL_ENERGY", "HEATING_ENERGY", "COOLING_ENERGY")
 
 # Energiefluss-Werte, die das Gateway nur mit einem eigenen Verbrauchszähler liefert. Ohne ihn
 # bleiben sie leer; die Entitäten werden daher standardmäßig deaktiviert angelegt.
@@ -54,6 +67,94 @@ EMPTY_LIST_STATE = "none"
 
 # Maximale Länge eines Sensorzustands in Home Assistant.
 MAX_STATE_LENGTH = 255
+
+# Einstellungen aus der offiziellen BEAAM-API, für die es keine passende Eingabe-Plattform gibt
+# (Format der Werte nicht dokumentiert). Sie werden nur lesend als Sensor angezeigt.
+# EV_SELECTED (Kennung des am Ladepunkt ausgewählten Fahrzeugs) lehnt das Gateway beim Schreiben
+# mit "400 Bad Request" ab; eine Liste der Fahrzeuge liefert die API nicht.
+READ_ONLY_SETTINGS = ("GRID_FEED_IN_PRIORITIZATION_TIMES", "EV_SELECTED")
+
+# Abweichende Namen und Icons für nur lesende Einstellungen
+SETTING_SENSOR_NAMES = {"EV_SELECTED": "Selected EV"}
+SETTING_SENSOR_ICONS = {"EV_SELECTED": "mdi:car-electric"}
+
+
+@dataclass(frozen=True)
+class CloudSensorSpec:
+    """Beschreibt einen Sensor aus den Daten der neoom AI Cloud."""
+
+    key: str
+    name: str
+    data_path: str  # "site" (Stammdaten/Tarife) oder "flow" (energy-flow/latest)
+    unit: str | None = None
+    icon: str | None = None
+    device_class: SensorDeviceClass | None = None
+    state_class: SensorStateClass | None = None
+    diagnostic: bool = False
+    enabled_default: bool = True
+    # Feld in denselben Daten, das als Attribut "total" angezeigt wird (z. B. Gesamtzahl der Geräte)
+    total_key: str | None = None
+    # Nur anlegen, wenn die Cloud das Feld für diese Site liefert
+    optional: bool = False
+
+
+CLOUD_SENSORS: tuple[CloudSensorSpec, ...] = (
+    CloudSensorSpec(
+        "electricity_price", "Electricity Price", "site",
+        unit="ct/kWh", icon="mdi:currency-eur", state_class=SensorStateClass.MEASUREMENT,
+    ),
+    CloudSensorSpec(
+        "feed_in_tariff", "Feed-in Tariff", "site",
+        unit="ct/kWh", icon="mdi:cash-plus", state_class=SensorStateClass.MEASUREMENT,
+    ),
+    CloudSensorSpec("gateways_online_state", "Gateway Status", "flow", icon="mdi:router-network"),
+    CloudSensorSpec(
+        "co2_factor", "CO2 Factor", "site",
+        unit="kg/kWh", icon="mdi:molecule-co2", state_class=SensorStateClass.MEASUREMENT, optional=True,
+    ),
+    # Die folgenden Anlagendaten liefert die Cloud zusammen mit dem Energiefluss
+    CloudSensorSpec(
+        "max_network_utilization", "Max Network Utilization", "flow",
+        unit=UnitOfPower.WATT, device_class=SensorDeviceClass.POWER, state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:transmission-tower", optional=True,
+    ),
+    CloudSensorSpec(
+        "grids_max_feed_in_power", "Max Feed-in Power", "flow",
+        unit=UnitOfPower.WATT, device_class=SensorDeviceClass.POWER, state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:transmission-tower-export", diagnostic=True, optional=True,
+    ),
+    CloudSensorSpec(
+        "producers_max_power", "Producers Max Power", "flow",
+        unit=UnitOfPower.WATT, device_class=SensorDeviceClass.POWER, state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:solar-power", diagnostic=True, optional=True,
+    ),
+    CloudSensorSpec(
+        "storages_max_power", "Storages Max Power", "flow",
+        unit=UnitOfPower.WATT, device_class=SensorDeviceClass.POWER, state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:battery-charging", diagnostic=True, optional=True,
+    ),
+    CloudSensorSpec(
+        "total_storage_capacity", "Total Storage Capacity", "flow",
+        unit=UnitOfEnergy.WATT_HOUR, device_class=SensorDeviceClass.ENERGY_STORAGE,
+        state_class=SensorStateClass.MEASUREMENT, icon="mdi:battery", diagnostic=True, optional=True,
+    ),
+    # Wie viele Geräte je Gruppe die Cloud gerade erreicht; die Gesamtzahl steht im Attribut "total"
+    *(
+        CloudSensorSpec(
+            f"{group}_online_count", f"{label} Online", "flow",
+            icon="mdi:lan-connect", state_class=SensorStateClass.MEASUREMENT,
+            diagnostic=True, enabled_default=False, total_key=f"{group}_total_count", optional=True,
+        )
+        for group, label in (
+            ("producers", "Producers"),
+            ("consumers", "Consumers"),
+            ("storages", "Storages"),
+            ("heatings", "Heatings"),
+            ("charging_points", "Charging Points"),
+            ("grids", "Grids"),
+        )
+    ),
+)
 
 
 async def async_setup_entry(
@@ -70,41 +171,21 @@ async def async_setup_entry(
     cloud_coordinator = entry.runtime_data.cloud
     local_coordinator = entry.runtime_data.local
 
-    entities: list[SensorEntity] = []
-
     # --- CLOUD SENSOREN ---
-    # Diese Sensoren werden manuell erstellt, da wir wissen,
-    # welche Tarifdaten die Cloud standardmäßig zurückgibt.
-    entities.append(
-        NeoomCloudSensor(
-            coordinator=cloud_coordinator,
-            key="electricity_price",
-            name="Electricity Price",
-            unit="ct/kWh",
-            icon="mdi:currency-eur",
-            data_path="site",
-        )
-    )
-    entities.append(
-        NeoomCloudSensor(
-            coordinator=cloud_coordinator,
-            key="feed_in_tariff",
-            name="Feed-in Tariff",
-            unit="ct/kWh",
-            icon="mdi:cash-plus",
-            data_path="site",
-        )
-    )
-    entities.append(
-        NeoomCloudSensor(
-            coordinator=cloud_coordinator,
-            key="gateways_online_state",
-            name="Gateway Status",
-            unit=None,
-            icon="mdi:router-network",
-            data_path="flow",
-        )
-    )
+    # Diese Sensoren stehen fest, da wir wissen, welche Daten die Cloud zurückgibt.
+    # Optionale Sensoren gibt es nur, wenn die Cloud das Feld für diese Site liefert.
+    cloud_data = cloud_coordinator.data or {}
+    entity_registry = er.async_get(hass)
+    entities: list[SensorEntity] = []
+    for spec in CLOUD_SENSORS:
+        section = cloud_data.get(spec.data_path)
+        if spec.optional and not (isinstance(section, dict) and spec.key in section):
+            # Eine früher angelegte Entität ohne Daten wieder entfernen
+            stale_id = entity_registry.async_get_entity_id("sensor", DOMAIN, f"{cloud_coordinator.site_id}_{spec.key}")
+            if stale_id:
+                entity_registry.async_remove(stale_id)
+            continue
+        entities.append(NeoomCloudSensor(cloud_coordinator, spec))
 
     async_add_entities(entities)
 
@@ -217,6 +298,36 @@ async def async_setup_entry(
                                 )
                             )
 
+        # Einstellungen, für die es keine Eingabe-Plattform gibt, nur lesend anzeigen
+        settings_map: dict[str, dict[str, Any]] = local_coordinator.data.get("settings", {})
+        for thing_id, thing_data in things.items():
+            thing_settings = settings_map.get(thing_id)
+            if not isinstance(thing_data, dict) or not isinstance(thing_settings, dict):
+                continue
+            for key, val in thing_settings.items():
+                spec, _known = classify_setting(key, val)
+                unique_id = f"{thing_id}_{key}_setting"
+                if spec is not None:
+                    # Hat die Einstellung inzwischen eine eigene Plattform, den früheren Sensor entfernen
+                    stale_id = entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+                    if stale_id:
+                        entity_registry.async_remove(stale_id)
+                    continue
+                if unique_id not in known_sensor_ids:
+                    known_sensor_ids.add(unique_id)
+                    # Textfeld aus 1.1.8b2 bis b7, das der Sensor wieder ablöst
+                    stale_id = entity_registry.async_get_entity_id("text", DOMAIN, f"{thing_id}_{key}_text")
+                    if stale_id:
+                        entity_registry.async_remove(stale_id)
+                    new_entities.append(
+                        NeoomSettingSensor(
+                            coordinator=local_coordinator,
+                            thing_id=thing_id,
+                            thing_data=thing_data,
+                            setting_key=key,
+                        )
+                    )
+
         if new_entities:
             async_add_entities(new_entities)
 
@@ -235,45 +346,49 @@ class NeoomCloudSensor(CoordinatorEntity, SensorEntity):
 
     _attr_has_entity_name = True
 
-    def __init__(
-        self,
-        coordinator: NeoomCloudCoordinator,
-        key: str,
-        name: str,
-        unit: str | None,
-        icon: str,
-        data_path: str = "site",
-    ) -> None:
+    def __init__(self, coordinator: NeoomCloudCoordinator, spec: CloudSensorSpec) -> None:
         """Initialisiert den Cloud-Sensor."""
         super().__init__(coordinator)
-        self._key = key
-        self._name = name
-        self._attr_native_unit_of_measurement = unit
-        self._attr_icon = icon
-        self._data_path = data_path
-        self._attr_translation_key = key
-        self._attr_name = name
+        self._key = spec.key
+        self._data_path = spec.data_path
+        self._total_key = spec.total_key
+        self._attr_native_unit_of_measurement = spec.unit
+        self._attr_icon = spec.icon
+        self._attr_device_class = spec.device_class
+        self._attr_state_class = spec.state_class
+        self._attr_entity_registry_enabled_default = spec.enabled_default
+        if spec.diagnostic:
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_translation_key = spec.key
+        self._attr_name = spec.name
 
         # Eindeutige ID ist entscheidend für Home Assistant, um die Entität wiederzuerkennen
-        self._attr_unique_id = f"{coordinator.site_id}_{key}"
+        self._attr_unique_id = f"{coordinator.site_id}_{spec.key}"
+
+    def _section(self) -> dict[str, Any]:
+        """Liefert den Teil der Cloud-Daten ('site' oder 'flow'), aus dem der Sensor liest."""
+        section = (self.coordinator.data or {}).get(self._data_path)
+        return section if isinstance(section, dict) else {}
 
     @property
     def native_value(self) -> Any:
         """Gibt den aktuellen Zustand/Wert des Sensors zurück."""
-        if not self.coordinator.data:
-            return None
-
-        # Holt den Wert aus dem vom Coordinator bereitgestellten Dictionary
-        # Entweder unter 'site' oder 'flow', je nach data_path
-        return self.coordinator.data.get(self._data_path, {}).get(self._key)
+        value = self._section().get(self._key)
+        if isinstance(value, dict):
+            # Zeitreihen-Werte liefert die Cloud als {"time": ..., "value": ...}
+            value = value.get("value")
+        return value
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Gibt zusätzliche Attribute für den Cloud-Sensor zurück."""
-        return {
+        attributes: dict[str, Any] = {
             "key": self._key,
             "data_path": self._data_path,
         }
+        if self._total_key:
+            attributes["total"] = self._section().get(self._total_key)
+        return attributes
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -312,6 +427,9 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
         self._dp_id = dp_id
         self._key: str = dp_data.get("key", "")
         self._uom_raw: str = dp_data.get("unitOfMeasure", "")
+        if dp_data.get("dataType") == "STRING":
+            # Texte haben weder Einheit noch Geräte- oder Statusklasse (die setzen Zahlen voraus)
+            self._uom_raw = ""
 
         beaam_config = coordinator.data.get("config", {}) if coordinator.data else {}
         self._friendly_thing_name = get_friendly_thing_name(beaam_config, thing_id, self._thing_type)
@@ -446,9 +564,15 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
             return UnitOfElectricCurrent.AMPERE
         if unit_str == "Hz":
             return UnitOfFrequency.HERTZ
+        if unit_str == "VAr":
+            return UnitOfReactivePower.VOLT_AMPERE_REACTIVE
+        if unit_str == "VA":
+            return UnitOfApparentPower.VOLT_AMPERE
+        if unit_str == "Pa":
+            return UnitOfPressure.PA
 
         # Temperatur
-        if unit_str == "C":
+        if unit_str in ["C", "°C"]:
             return UnitOfTemperature.CELSIUS
         if unit_str == "K":
             return UnitOfTemperature.KELVIN
@@ -478,9 +602,17 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
             return SensorDeviceClass.CURRENT
         if unit == "Hz":
             return SensorDeviceClass.FREQUENCY
-        if unit in ["C", "K", "°C", UnitOfTemperature.CELSIUS, UnitOfTemperature.KELVIN] or "TEMPERATURE" in key:
+        if unit == "VAr":
+            return SensorDeviceClass.REACTIVE_POWER
+        if unit == "VA":
+            return SensorDeviceClass.APPARENT_POWER
+        if unit == "Pa":
+            return SensorDeviceClass.PRESSURE
+        # Temperatur und Dauer nur anhand der Einheit: Schlüssel wie MAX_CELL_TEMPERATURE_NUMBER
+        # (Nummer einer Zelle) oder CHARGING_PROCESS_START_TIME (Zeitpunkt) sind keine Messwerte.
+        if unit in ["C", "K", "°C"]:
             return SensorDeviceClass.TEMPERATURE
-        if unit in ["s", "h", UnitOfTime.SECONDS, UnitOfTime.HOURS] or "TIME" in key or "DURATION" in key:
+        if unit in ["s", "h"]:
             return SensorDeviceClass.DURATION
         if unit == "%" and any(ind in key.upper() for ind in BATTERY_LEVEL_INDICATORS):
             # SOC bzw. STATE_OF_CHARGE steht für den Batterie-Ladezustand. Die Geräteklasse
@@ -499,8 +631,8 @@ class NeoomLocalSensor(CoordinatorEntity, SensorEntity):
         if unit in ["%", "W", "kW", "MW", "GW", "V", "A", "Hz", "C", "K", "°C", "s", "h", UnitOfTemperature.CELSIUS, UnitOfTemperature.KELVIN, UnitOfTime.SECONDS, UnitOfTime.HOURS]:
             return SensorStateClass.MEASUREMENT
 
-        # Prüfung für Energiewerte (Wh, kWh, MWh, GWh oder "ENERGY" im Schlüssel)
-        if unit in ["Wh", "kWh", "MWh", "GWh"] or "ENERGY" in key:
+        # Prüfung für Energiewerte (Wh, kWh, MWh, GWh)
+        if unit in ["Wh", "kWh", "MWh", "GWh"]:
             key_upper = key.upper()
             # Nicht-kumulative Energiewerte (z.B. gespeicherte Batterieenergie, Restkapazität, Limits)
             # stellen einen aktuellen Messwert dar und dürfen NICHT als TOTAL_INCREASING markiert werden,
@@ -635,3 +767,63 @@ class NeoomStringArraySensor(NeoomLocalSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Ergänzt die Attribute um die vollständige Liste."""
         return {**super().extra_state_attributes, "values": self._values}
+
+
+class NeoomSettingSensor(CoordinatorEntity[NeoomLocalCoordinator], SensorEntity):
+    """Eine Einstellung des Gateways, die nur angezeigt wird (z. B. GRID_FEED_IN_PRIORITIZATION_TIMES).
+
+    Für diese Einstellungen gibt es keine passende Eingabe-Plattform. Außerhalb von
+    READ_ONLY_SETTINGS (offizielle API) sind die Entitäten standardmäßig deaktiviert.
+    """
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:cog-outline"
+
+    def __init__(
+        self,
+        coordinator: NeoomLocalCoordinator,
+        thing_id: str,
+        thing_data: dict[str, Any],
+        setting_key: str,
+    ) -> None:
+        """Initialisiert den Sensor für die Einstellung setting_key."""
+        super().__init__(coordinator)
+        self._thing_id = thing_id
+        self._thing_type: str = thing_data.get("type", "Unknown")
+        self._setting_key = setting_key
+
+        beaam_config = coordinator.data.get("config", {}) if coordinator.data else {}
+        self._friendly_thing_name = get_friendly_thing_name(beaam_config, thing_id, self._thing_type)
+
+        self._attr_name = SETTING_SENSOR_NAMES.get(setting_key) or setting_key.replace("_", " ").title()
+        self._attr_unique_id = f"{thing_id}_{setting_key}_setting"
+        self._attr_entity_registry_enabled_default = setting_key in READ_ONLY_SETTINGS
+        if setting_key in SETTING_SENSOR_ICONS:
+            self._attr_icon = SETTING_SENSOR_ICONS[setting_key]
+
+    @property
+    def native_value(self) -> str | None:
+        """Gibt den aktuellen Wert der Einstellung als Text zurück."""
+        if not self.coordinator.data:
+            return None
+        value = self.coordinator.data.get("settings", {}).get(self._thing_id, {}).get(self._setting_key)
+        if value is None:
+            return None
+        return str(value)[:MAX_STATE_LENGTH]
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Gibt spezifische Attribute für diese Einstellung zurück."""
+        return {"thing_id": self._thing_id, "key": self._setting_key}
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Verknüpfung der Entität mit dem physischen Gerät (Thing) im Device Registry."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._thing_id)},
+            name=f"neoom {self._friendly_thing_name}",
+            manufacturer="neoom",
+            model=self._thing_type,
+            **self.coordinator.gateway_link,
+        )

@@ -98,10 +98,13 @@ def get_friendly_thing_name(beaam_config: dict[str, Any], thing_id: str, default
 def is_generic_thing(thing_data: dict[str, Any]) -> bool:
     """Prüft, ob ein Gerät (Thing) ein Generic Device ist.
 
-    Nur Generic Devices nehmen Werte per State-Ingest an. Ihr Typ enthält
-    "generic" (Groß-/Kleinschreibung wird ignoriert).
+    Nur Generic Devices nehmen Werte per State-Ingest an. Erkannt werden sie am Typ
+    ("generic", Groß-/Kleinschreibung wird ignoriert) oder am Feld genericDataIngest,
+    mit dem das Gateway Geräte mit Daten-Ingest kennzeichnet.
     """
-    return "GENERIC" in str(thing_data.get("type") or "").upper()
+    if "GENERIC" in str(thing_data.get("type") or "").upper():
+        return True
+    return thing_data.get("genericDataIngest") is not None
 
 
 def is_ingest_entity_wanted(
@@ -145,3 +148,26 @@ def parse_bool(value: Any) -> bool | None:
     if isinstance(value, str) and value.lower() in ("true", "false", "1", "0"):
         return value.lower() in ("true", "1")
     return None
+
+
+def coerce_ingest_value(data_type: str | None, value: Any) -> Any:
+    """Bringt einen Ingest-Wert in den Typ des Datenpunkts (NUMBER, BOOLEAN oder STRING).
+
+    Werte aus der Oberfläche kommen als Text an. Ohne bekannten Datentyp bleibt der Wert unverändert.
+
+    Raises:
+        ValueError: Wenn der Wert nicht zum Datentyp passt.
+    """
+    if data_type == "NUMBER":
+        if isinstance(value, bool):
+            raise ValueError(f"'{value}' ist keine Zahl")
+        number = float(value)
+        return int(number) if number.is_integer() else number
+    if data_type == "BOOLEAN":
+        parsed = parse_bool(value)
+        if parsed is None:
+            raise ValueError(f"'{value}' ist kein Wahrheitswert")
+        return parsed
+    if data_type == "STRING":
+        return str(value)
+    return value

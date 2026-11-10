@@ -15,7 +15,7 @@ from typing import Any
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import (
@@ -32,6 +32,7 @@ from .const import (
     DOMAIN,
     LOGGER,
     SETTING_REFRESH_DELAY,
+    SETTINGS_REFRESH_INTERVAL,
 )
 from .helpers import (
     SUPPORTS_VIA_DEVICE_ID,
@@ -43,6 +44,15 @@ from .helpers import (
 
 class ThingFetchError(Exception):
     """Das Gateway hat die Abfrage eines Things nicht mit HTTP 200 beantwortet."""
+
+
+def _describe_send_error(what: str, key: str, value: Any, err: Exception) -> str:
+    """Beschreibt einen Fehler beim Senden an das Gateway so, dass er in der Oberfläche lesbar ist."""
+    if isinstance(err, aiohttp.ClientResponseError):
+        return f"Das BEAAM Gateway hat {what} {key} = {value} abgelehnt (HTTP {err.status} {err.message})."
+    if isinstance(err, TimeoutError):
+        return f"Das BEAAM Gateway hat auf {what} {key} nicht rechtzeitig geantwortet."
+    return f"{what} {key} konnte nicht an das BEAAM Gateway gesendet werden: {err}"
 
 
 class NeoomCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -180,6 +190,16 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Zeitpunkt (time.monotonic), ab dem die Konfiguration neu geladen werden soll.
         self._config_refresh_due: float = 0.0
 
+        # Einstellungen ändern sich selten und werden nur alle SETTINGS_REFRESH_INTERVAL Sekunden
+        # abgefragt; dazwischen bleibt der letzte Stand (thing_id -> {Schlüssel: Wert}) in Gebrauch.
+        self._settings: dict[str, dict[str, Any]] = {}
+        self._settings_refresh_due: float = 0.0
+        # Fehler der letzten Settings-Abfrage pro Thing (gelten bis zur nächsten Settings-Abfrage)
+        self._settings_errors: dict[str, str] = {}
+        # Things ohne Einstellungen (HTTP 404 auf /settings); werden erst nach dem nächsten
+        # Laden der Gerätestruktur erneut gefragt.
+        self._things_without_settings: set[str] = set()
+
     @property
     def gateway_link(self) -> dict[str, Any]:
         """DeviceInfo-Felder, die ein Thing mit dem BEAAM Gateway verknüpfen."""
@@ -217,6 +237,7 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
 
         self._config_refresh_due = now + CONFIG_REFRESH_INTERVAL
+        self._things_without_settings.clear()
         old_version = (self.beaam_config or {}).get("versionTimestamp")
         new_version = (new_config or {}).get("versionTimestamp")
         if old_version is not None and old_version == new_version:
@@ -272,6 +293,7 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             async with self.session.get(url, headers=headers) as resp:
                 if endpoint == "settings" and resp.status == 404:
                     # Things ohne Einstellungen sind kein Fehler
+                    self._things_without_settings.add(thing_id)
                     return {"settings": []}
                 if resp.status != 200:
                     raise ThingFetchError(f"HTTP {resp.status}")
@@ -322,7 +344,7 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         headers = {"Authorization": f"Bearer {self.key}"}
         state_map: dict[str, Any] = {}
-        settings_map: dict[str, dict[str, Any]] = {}
+        fetch_settings = time.monotonic() >= self._settings_refresh_due
 
         try:
             async with asyncio.timeout(20):
@@ -358,20 +380,33 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     thing_ids = list(self.beaam_config["things"].keys())
 
                     if thing_ids:
+                        # Einstellungen nur, wenn sie fällig sind, und nur bei Things, die welche haben
+                        settings_ids = (
+                            [tid for tid in thing_ids if tid not in self._things_without_settings]
+                            if fetch_settings
+                            else []
+                        )
                         coros_states = [self._fetch_thing_state(tid, headers) for tid in thing_ids]
-                        coros_settings = [self._fetch_thing_settings(tid, headers) for tid in thing_ids]
+                        coros_settings = [self._fetch_thing_settings(tid, headers) for tid in settings_ids]
 
                         # States und Settings in einer Runde parallel abfragen, dann wieder aufteilen
                         results = await asyncio.gather(*coros_states, *coros_settings, return_exceptions=True)
                         results_states = results[: len(thing_ids)]
                         results_settings = results[len(thing_ids) :]
 
+                        if fetch_settings:
+                            self._settings_errors = {
+                                thing_id: str(res) or type(res).__name__
+                                for thing_id, res in zip(settings_ids, results_settings, strict=False)
+                                if isinstance(res, BaseException)
+                            }
+
                         errors: dict[str, list[str]] = {}
-                        for endpoint, endpoint_results in (("states", results_states), ("settings", results_settings)):
-                            for thing_id, res in zip(thing_ids, endpoint_results, strict=False):
-                                if isinstance(res, BaseException):
-                                    reason = str(res) or type(res).__name__
-                                    errors.setdefault(thing_id, []).append(f"{endpoint}: {reason}")
+                        for thing_id, res in zip(thing_ids, results_states, strict=False):
+                            if isinstance(res, BaseException):
+                                errors.setdefault(thing_id, []).append(f"states: {str(res) or type(res).__name__}")
+                        for thing_id, reason in self._settings_errors.items():
+                            errors.setdefault(thing_id, []).append(f"settings: {reason}")
                         self._async_track_thing_errors(errors, thing_ids)
 
                         for thing_id, res in zip(thing_ids, results_states, strict=False):
@@ -387,20 +422,26 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                                             if key is not None:
                                                 state_map[f"{thing_id}_{key}"] = item
 
-                        for thing_id, res in zip(thing_ids, results_settings, strict=False):
-                            if isinstance(res, dict) and "settings" in res:
-                                settings_list = res.get("settings")
-                                if isinstance(settings_list, list):
-                                    settings_map[thing_id] = {
-                                        s["key"]: s["value"]
-                                        for s in settings_list
-                                        if isinstance(s, dict) and s.get("key") is not None and "value" in s
-                                    }
+                        if fetch_settings:
+                            settings_map: dict[str, dict[str, Any]] = {
+                                thing_id: {} for thing_id in thing_ids if thing_id in self._things_without_settings
+                            }
+                            for thing_id, res in zip(settings_ids, results_settings, strict=False):
+                                if isinstance(res, dict) and "settings" in res:
+                                    settings_list = res.get("settings")
+                                    if isinstance(settings_list, list):
+                                        settings_map[thing_id] = {
+                                            s["key"]: s["value"]
+                                            for s in settings_list
+                                            if isinstance(s, dict) and s.get("key") is not None and "value" in s
+                                        }
+                            self._settings = settings_map
+                            self._settings_refresh_due = time.monotonic() + SETTINGS_REFRESH_INTERVAL
 
                 return {
                     "config": self.beaam_config,
                     "states": state_map,
-                    "settings": settings_map
+                    "settings": self._settings,
                 }
 
         except ConfigEntryAuthFailed:
@@ -433,9 +474,9 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 async with self.session.post(url, headers=headers, json=payload) as resp:
                     resp.raise_for_status()
                     LOGGER.info("Befehl an BEAAM erfolgreich gesendet: %s -> %s", key, value)
-        except Exception as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             LOGGER.error("Schwerwiegender Fehler beim Senden des Befehls an '%s': %s", thing_id, err)
-            raise
+            raise HomeAssistantError(_describe_send_error("Befehl", key, value, err)) from err
 
         # Außerhalb des Timeouts: Ein langsamer Refresh macht den gesendeten Befehl nicht ungültig
         await self.async_request_refresh()
@@ -462,9 +503,9 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 async with self.session.post(url, headers=headers, json=payload) as resp:
                     resp.raise_for_status()
                     LOGGER.info("State-Ingest an BEAAM erfolgreich gesendet: %s -> %s", key, value)
-        except Exception as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             LOGGER.error("Schwerwiegender Fehler beim Senden des States an '%s': %s", thing_id, err)
-            raise
+            raise HomeAssistantError(_describe_send_error("State-Ingest", key, value, err)) from err
 
         # Außerhalb des Timeouts: Ein langsamer Refresh macht den gesendeten Wert nicht ungültig
         await self.async_request_refresh()
@@ -515,9 +556,9 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         if thing_id not in self.data["settings"]:
                             self.data["settings"][thing_id] = {}
                         self.data["settings"][thing_id][key] = api_value
-        except Exception as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             LOGGER.error("Schwerwiegender Fehler beim Senden der Einstellung an '%s': %s", thing_id, err)
-            raise
+            raise HomeAssistantError(_describe_send_error("Einstellung", key, api_value, err)) from err
 
         # Die Einstellung gilt als gesetzt, sobald das Gateway sie angenommen hat. Der neue Wert
         # wird sofort angezeigt und kurz darauf im Hintergrund vom Gateway bestätigt.
@@ -535,6 +576,8 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         async def _async_refresh(_now: Any) -> None:
             self._unsub_setting_refresh = None
+            # Einstellungen beim nächsten Abruf in jedem Fall neu laden
+            self._settings_refresh_due = 0.0
             await self.async_request_refresh()
 
         self._unsub_setting_refresh = async_call_later(self.hass, SETTING_REFRESH_DELAY, _async_refresh)
