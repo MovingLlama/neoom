@@ -55,6 +55,17 @@ def _describe_send_error(what: str, key: str, value: Any, err: Exception) -> str
     return f"{what} {key} konnte nicht an das BEAAM Gateway gesendet werden: {err}"
 
 
+def _setting_api_value(value: Any) -> str:
+    """Wandelt einen Einstellungswert in die Textform um, die das Gateway erwartet."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(int(value)) if value == int(value) else str(value)
+    if isinstance(value, str) and value.lower() in ("true", "false"):
+        return value.lower()
+    return str(value)
+
+
 class NeoomCloudCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Koordinator für den Abruf von Daten aus der neoom AI Cloud."""
 
@@ -510,37 +521,29 @@ class NeoomLocalCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Außerhalb des Timeouts: Ein langsamer Refresh macht den gesendeten Wert nicht ungültig
         await self.async_request_refresh()
 
-    async def async_send_setting(self, thing_id: str, key: str, value: Any) -> None:
-        """Sendet eine Einstellungsänderung an die BEAAM API."""
+    async def async_send_setting(
+        self, thing_id: str, key: str, value: Any, companions: dict[str, Any] | None = None
+    ) -> None:
+        """Sendet eine Einstellungsänderung an die BEAAM API.
+
+        companions sind weitere Einstellungen, die unverändert in derselben Anfrage mitgesendet werden.
+        """
         url = f"http://{self.ip}/api/v1/things/{thing_id}/settings"
         headers = {
             "Authorization": f"Bearer {self.key}",
             "Content-Type": "application/json"
         }
 
-        api_value = value
-        if isinstance(value, bool):
-            api_value = "true" if value else "false"
-        elif isinstance(value, (int, float)):
-            api_value = str(int(value)) if value == int(value) else str(value)
-        elif isinstance(value, str):
-            if value.lower() == "true":
-                api_value = "true"
-            elif value.lower() == "false":
-                api_value = "false"
-            else:
-                api_value = value
-        else:
-            api_value = str(value)
+        api_value = _setting_api_value(value)
+        api_values = {key: api_value}
+        for companion_key, companion_value in (companions or {}).items():
+            api_values.setdefault(companion_key, _setting_api_value(companion_value))
 
-        payload = [
-            {
-                "key": key,
-                "value": api_value
-            }
-        ]
+        payload = [{"key": k, "value": v} for k, v in api_values.items()]
 
         LOGGER.info("Sende Einstellung an lokales BEAAM Gerät '%s': '%s' = '%s' (Roh: %s)", thing_id, key, api_value, value)
+        if companions:
+            LOGGER.debug("Mitgesendete Einstellungen: %s", ", ".join(k for k in api_values if k != key))
 
         try:
             async with asyncio.timeout(10):

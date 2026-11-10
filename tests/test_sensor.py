@@ -322,6 +322,8 @@ async def test_read_only_setting_sensors(hass: HomeAssistant, aioclient_mock) ->
         thing_settings={
             INVERTER_ID: [
                 {"key": "EV_SELECTED", "value": "ev-123"},
+                {"key": "GRIID_CHARGING_ENERGY", "value": "40000"},
+                {"key": "GRIID_EV_DEPARTURE_TIME", "value": "12:30"},
                 {"key": "GRID_FEED_IN_PRIORITIZATION_TIMES", "value": "08:00-12:00"},
                 {"key": "SOME_LABEL", "value": "abc"},
                 {"key": "PRIORITY", "value": "1"},
@@ -345,7 +347,12 @@ async def test_read_only_setting_sensors(hass: HomeAssistant, aioclient_mock) ->
     aioclient_mock.put(f"http://{BEAAM_IP}/api/v1/things/{INVERTER_ID}/settings", json={})
     await hass.services.async_call("text", "set_value", {"entity_id": ev_id, "value": "ev-456"}, blocking=True)
     puts = [call for call in aioclient_mock.mock_calls if call[0] == "PUT"]
-    assert puts[0][2] == [{"key": "EV_SELECTED", "value": "ev-456"}]
+    # Das Fahrzeug wird zusammen mit Lademenge und Abfahrtszeit gesendet
+    assert puts[0][2] == [
+        {"key": "EV_SELECTED", "value": "ev-456"},
+        {"key": "GRIID_CHARGING_ENERGY", "value": "40000"},
+        {"key": "GRIID_EV_DEPARTURE_TIME", "value": "12:30"},
+    ]
     assert hass.states.get(ev_id).state == "ev-456"
     await hass.config_entries.async_unload(entry.entry_id)
     unknown = registry.async_get(_entity_id(hass, f"{INVERTER_ID}_SOME_LABEL_setting"))

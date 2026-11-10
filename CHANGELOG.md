@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.8b6 (Beta)
+
+### Geändert
+- **Versuch:** „Selected EV“ (`EV_SELECTED`) wird zusammen mit der aktuellen Lademenge (`GRIID_CHARGING_ENERGY`) und Abfahrtszeit (`GRIID_EV_DEPARTURE_TIME`) in einer Anfrage gesendet. Allein gesendet lehnt das Gateway die Fahrzeugwahl ab. Ob es die gemeinsame Anfrage annimmt, ist noch nicht bestätigt.
+
 ## 1.1.8b5 (Beta)
 
 ### Behoben
