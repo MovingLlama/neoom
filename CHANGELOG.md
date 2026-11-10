@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.8b2 (Beta)
+
+### Behoben
+- Die maximale Netzanschlussleistung (`max_network_utilization`) wird aus den Energiefluss-Daten der Cloud gelesen; unter den Stammdaten der Site steht sie nicht, der Sensor blieb „unbekannt“.
+- Cloud-Sensoren, deren Feld die Cloud für die Site nicht liefert (z. B. `co2_factor`), werden nicht mehr angelegt; eine in 1.1.8b1 angelegte leere Entität wird entfernt.
+- Auswahl-Entitäten zeigen Werte an, die das Gateway meldet, die aber nicht in der Optionsliste stehen, statt „unbekannt“. Betroffen war die Phasenumschaltung des Ladepunkts (`PHASE_SWITCHING_MODE`): Das Gateway meldet z. B. `THREE_PHASE` („3-phasig“).
+- Wärmemengen der Wärmepumpe (`THERMAL_ENERGY`, `HEATING_ENERGY`, `COOLING_ENERGY`) haben die Statusklasse `total` statt `total_increasing`. Die Werte schwanken leicht, was Home Assistant als Zähler-Reset wertete und im Log bemängelte („state is not strictly increasing“).
+
+### Neu
+- **Ausgewähltes Fahrzeug am Ladepunkt (`EV_SELECTED`) ist beschreibbar:** Die Einstellung erscheint als Textfeld („Selected EV“) mit der Kennung des Fahrzeugs und lässt sich auch per `text.set_value` setzen. Eine Liste der Fahrzeuge mit Namen liefert die API nicht. Der in 1.1.8b1 angelegte, nur lesende Sensor wird entfernt.
+- Cloud-Diagnose-Sensoren für Anlagendaten, sofern die Cloud sie liefert: maximale Einspeiseleistung, maximale Erzeuger- und Speicherleistung, gesamte Speicherkapazität.
+
 ## 1.1.8b1 (Beta)
 
 ### Behoben
@@ -12,7 +24,7 @@
 - **Cloud-Sensoren:** CO₂-Faktor (`co2_factor`, kg/kWh) und maximale Netzanschlussleistung (`max_network_utilization`, W). Dazu je Gerätegruppe (Erzeuger, Verbraucher, Speicher, Heizungen, Ladepunkte, Netze) ein Diagnose-Sensor, wie viele Geräte die Cloud gerade erreicht (Gesamtzahl im Attribut `total`); diese sind standardmäßig deaktiviert.
 - Strompreis und Einspeisetarif haben eine Statusklasse und erhalten damit Langzeitstatistiken.
 - **Einheiten:** Blindleistung (`VAr`), Scheinleistung (`VA`) und Druck (`Pa`) bekommen die passende Geräteklasse. Die Einheit der Blindleistung heißt in Home Assistant `var` statt `VAr`; für bestehende Sensoren fragt Home Assistant unter *Entwicklerwerkzeuge → Statistik* ggf. einmalig nach, ob die Einheit der Statistik angepasst werden soll.
-- Einstellungen, für die es keine passende Eingabe gibt, erscheinen nur lesend als Diagnose-Sensor, darunter `EV_SELECTED` und `GRID_FEED_IN_PRIORITIZATION_TIMES` aus der offiziellen BEAAM-API. Andere unbekannte Einstellungen dieser Art sind standardmäßig deaktiviert.
+- Einstellungen, für die es keine passende Eingabe gibt, erscheinen nur lesend als Diagnose-Sensor, darunter `GRID_FEED_IN_PRIORITIZATION_TIMES` aus der offiziellen BEAAM-API. Andere unbekannte Einstellungen dieser Art sind standardmäßig deaktiviert.
 
 ### Geändert
 - **Weniger Abfragen am Gateway:** Einstellungen werden nur noch alle 60 Sekunden abgefragt statt bei jedem Zyklus (Standard 15 s). Änderungen aus Home Assistant werden weiterhin sofort abgeglichen; Änderungen aus der neoom App erscheinen nach spätestens einer Minute. Geräte ohne Einstellungen (HTTP 404) werden erst beim nächsten Laden der Gerätestruktur (alle 5 Minuten) wieder gefragt.

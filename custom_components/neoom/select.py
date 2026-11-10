@@ -179,8 +179,9 @@ class NeoomLocalSelect(CoordinatorEntity, SelectEntity):
         self._dp_id = dp_id
         self._key: str = dp_data.get("key", "")
 
-        # Weist Home Assistant die verfügbaren Dropdown-Optionen zu
-        self._attr_options: list[str] = options
+        # Weist Home Assistant die verfügbaren Dropdown-Optionen zu (Kopie: die Liste kann je
+        # Entität um vom Gateway gemeldete Werte wachsen)
+        self._attr_options: list[str] = list(options)
 
         beaam_config = coordinator.data.get("config", {}) if coordinator.data else {}
         self._friendly_thing_name = get_friendly_thing_name(beaam_config, thing_id, self._thing_type)
@@ -221,7 +222,10 @@ class NeoomLocalSelect(CoordinatorEntity, SelectEntity):
                 for opt in self._attr_options:
                     if opt.lower() == val_str:
                         return opt
-                return str(val)
+                # Meldet das Gateway einen Wert, der nicht in der Liste steht (z. B. THREE_PHASE bei
+                # PHASE_SWITCHING_MODE), wird er ergänzt. Sonst wäre der Zustand "unbekannt".
+                self._attr_options = [*self._attr_options, val_str]
+                return val_str
         return None
 
     async def async_select_option(self, option: str) -> None:

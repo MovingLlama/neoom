@@ -83,7 +83,7 @@ INGEST_UID_SUFFIXES: tuple[str, ...] = ("_ingest", "_ingest_select")
 class SettingSpec:
     """Beschreibt, als welche Entität eine Einstellung des Gateways angelegt wird."""
 
-    platform: str  # "number", "select", "switch" oder "time"
+    platform: str  # "number", "select", "switch", "time" oder "text"
     name: str | None = None
     unit: str | None = None
     device_class: str | None = None
@@ -105,6 +105,8 @@ KNOWN_SETTINGS: dict[str, SettingSpec] = {
     "BATTERY_CHARGE_FROM_GRID_ALLOWED": SettingSpec("switch", name="Allow battery charging from grid"),
     "BATTERY_DISCHARGE_TO_GRID_ALLOWED": SettingSpec("switch", name="Allow battery discharging to grid"),
     "GRIID_EV_DEPARTURE_TIME": SettingSpec("time", name="Departure time"),
+    # Kennung (UUID) des am Ladepunkt ausgewählten Fahrzeugs; die API liefert keine Liste der Fahrzeuge
+    "EV_SELECTED": SettingSpec("text", name="Selected EV"),
     "GRIID_CHARGING_ENERGY": SettingSpec(
         "number", name="Lademenge", unit="kWh", device_class="energy", max_value=1000, step=0.1, scale=1000
     ),

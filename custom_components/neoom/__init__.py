@@ -47,7 +47,8 @@ from .helpers import (
 
 # Definiere die unterstützten Plattformen, die von dieser Integration geladen werden.
 # Wir unterstützen Sensoren (nur-lesen), Number-Entitäten (Zahleneingabe/Slider),
-# Select-Entitäten (Dropdown-Menüs), Switch-Entitäten (Schalter), Time-Entitäten (Uhrzeiten)
+# Select-Entitäten (Dropdown-Menüs), Switch-Entitäten (Schalter), Text-Entitäten (Kennungen),
+# Time-Entitäten (Uhrzeiten)
 # und Binärsensoren (z. B. Verbindung, Notstrom aktiv).
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
@@ -55,6 +56,7 @@ PLATFORMS: list[Platform] = [
     Platform.NUMBER,
     Platform.SELECT,
     Platform.SWITCH,
+    Platform.TEXT,
     Platform.TIME,
 ]
 

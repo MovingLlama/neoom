@@ -28,6 +28,7 @@ from homeassistant.const import (
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -50,7 +51,9 @@ BATTERY_LEVEL_INDICATORS = ("SOC", "STATE_OF_CHARGE")
 # Schlüssel-Bestandteile von Energiewerten, die das Gateway aus anderen Zählern
 # berechnet (z.B. ENERGY_CONSUMED_CALC, ENERGY_APPLIANCES). Solche Bilanzen können
 # sinken oder negativ sein und sind daher keine stetig steigenden Zählerstände.
-DERIVED_ENERGY_INDICATORS = ("_CALC", "APPLIANCES")
+# Dasselbe gilt für Wärmemengen der Wärmepumpe (THERMAL_ENERGY, HEATING_ENERGY, COOLING_ENERGY),
+# die das Gerät aus Durchfluss und Temperaturen errechnet und die leicht schwanken.
+DERIVED_ENERGY_INDICATORS = ("_CALC", "APPLIANCES", "THERMAL_ENERGY", "HEATING_ENERGY", "COOLING_ENERGY")
 
 # Energiefluss-Werte, die das Gateway nur mit einem eigenen Verbrauchszähler liefert. Ohne ihn
 # bleiben sie leer; die Entitäten werden daher standardmäßig deaktiviert angelegt.
@@ -67,7 +70,7 @@ MAX_STATE_LENGTH = 255
 
 # Einstellungen aus der offiziellen BEAAM-API, für die es keine passende Eingabe-Plattform gibt
 # (Format der Werte nicht dokumentiert). Sie werden nur lesend als Sensor angezeigt.
-READ_ONLY_SETTINGS = ("EV_SELECTED", "GRID_FEED_IN_PRIORITIZATION_TIMES")
+READ_ONLY_SETTINGS = ("GRID_FEED_IN_PRIORITIZATION_TIMES",)
 
 
 @dataclass(frozen=True)
@@ -85,6 +88,8 @@ class CloudSensorSpec:
     enabled_default: bool = True
     # Feld in denselben Daten, das als Attribut "total" angezeigt wird (z. B. Gesamtzahl der Geräte)
     total_key: str | None = None
+    # Nur anlegen, wenn die Cloud das Feld für diese Site liefert
+    optional: bool = False
 
 
 CLOUD_SENSORS: tuple[CloudSensorSpec, ...] = (
@@ -99,19 +104,40 @@ CLOUD_SENSORS: tuple[CloudSensorSpec, ...] = (
     CloudSensorSpec("gateways_online_state", "Gateway Status", "flow", icon="mdi:router-network"),
     CloudSensorSpec(
         "co2_factor", "CO2 Factor", "site",
-        unit="kg/kWh", icon="mdi:molecule-co2", state_class=SensorStateClass.MEASUREMENT,
+        unit="kg/kWh", icon="mdi:molecule-co2", state_class=SensorStateClass.MEASUREMENT, optional=True,
+    ),
+    # Die folgenden Anlagendaten liefert die Cloud zusammen mit dem Energiefluss
+    CloudSensorSpec(
+        "max_network_utilization", "Max Network Utilization", "flow",
+        unit=UnitOfPower.WATT, device_class=SensorDeviceClass.POWER, state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:transmission-tower", optional=True,
     ),
     CloudSensorSpec(
-        "max_network_utilization", "Max Network Utilization", "site",
+        "grids_max_feed_in_power", "Max Feed-in Power", "flow",
         unit=UnitOfPower.WATT, device_class=SensorDeviceClass.POWER, state_class=SensorStateClass.MEASUREMENT,
-        icon="mdi:transmission-tower",
+        icon="mdi:transmission-tower-export", diagnostic=True, optional=True,
+    ),
+    CloudSensorSpec(
+        "producers_max_power", "Producers Max Power", "flow",
+        unit=UnitOfPower.WATT, device_class=SensorDeviceClass.POWER, state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:solar-power", diagnostic=True, optional=True,
+    ),
+    CloudSensorSpec(
+        "storages_max_power", "Storages Max Power", "flow",
+        unit=UnitOfPower.WATT, device_class=SensorDeviceClass.POWER, state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:battery-charging", diagnostic=True, optional=True,
+    ),
+    CloudSensorSpec(
+        "total_storage_capacity", "Total Storage Capacity", "flow",
+        unit=UnitOfEnergy.WATT_HOUR, device_class=SensorDeviceClass.ENERGY_STORAGE,
+        state_class=SensorStateClass.MEASUREMENT, icon="mdi:battery", diagnostic=True, optional=True,
     ),
     # Wie viele Geräte je Gruppe die Cloud gerade erreicht; die Gesamtzahl steht im Attribut "total"
     *(
         CloudSensorSpec(
             f"{group}_online_count", f"{label} Online", "flow",
             icon="mdi:lan-connect", state_class=SensorStateClass.MEASUREMENT,
-            diagnostic=True, enabled_default=False, total_key=f"{group}_total_count",
+            diagnostic=True, enabled_default=False, total_key=f"{group}_total_count", optional=True,
         )
         for group, label in (
             ("producers", "Producers"),
@@ -141,7 +167,19 @@ async def async_setup_entry(
 
     # --- CLOUD SENSOREN ---
     # Diese Sensoren stehen fest, da wir wissen, welche Daten die Cloud zurückgibt.
-    entities: list[SensorEntity] = [NeoomCloudSensor(cloud_coordinator, spec) for spec in CLOUD_SENSORS]
+    # Optionale Sensoren gibt es nur, wenn die Cloud das Feld für diese Site liefert.
+    cloud_data = cloud_coordinator.data or {}
+    entity_registry = er.async_get(hass)
+    entities: list[SensorEntity] = []
+    for spec in CLOUD_SENSORS:
+        section = cloud_data.get(spec.data_path)
+        if spec.optional and not (isinstance(section, dict) and spec.key in section):
+            # Eine früher angelegte Entität ohne Daten wieder entfernen
+            stale_id = entity_registry.async_get_entity_id("sensor", DOMAIN, f"{cloud_coordinator.site_id}_{spec.key}")
+            if stale_id:
+                entity_registry.async_remove(stale_id)
+            continue
+        entities.append(NeoomCloudSensor(cloud_coordinator, spec))
 
     async_add_entities(entities)
 
@@ -262,9 +300,13 @@ async def async_setup_entry(
                 continue
             for key, val in thing_settings.items():
                 spec, _known = classify_setting(key, val)
-                if spec is not None:
-                    continue
                 unique_id = f"{thing_id}_{key}_setting"
+                if spec is not None:
+                    # Hat die Einstellung inzwischen eine eigene Plattform, den früheren Sensor entfernen
+                    stale_id = entity_registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+                    if stale_id:
+                        entity_registry.async_remove(stale_id)
+                    continue
                 if unique_id not in known_sensor_ids:
                     known_sensor_ids.add(unique_id)
                     new_entities.append(
@@ -718,7 +760,7 @@ class NeoomStringArraySensor(NeoomLocalSensor):
 
 
 class NeoomSettingSensor(CoordinatorEntity[NeoomLocalCoordinator], SensorEntity):
-    """Eine Einstellung des Gateways, die nur angezeigt wird (z. B. EV_SELECTED).
+    """Eine Einstellung des Gateways, die nur angezeigt wird (z. B. GRID_FEED_IN_PRIORITIZATION_TIMES).
 
     Für diese Einstellungen gibt es keine passende Eingabe-Plattform. Außerhalb von
     READ_ONLY_SETTINGS (offizielle API) sind die Entitäten standardmäßig deaktiviert.
