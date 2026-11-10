@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.8b3 (Beta)
+
+### Behoben
+- Die Priorität (`PRIORITY`) ist „nicht verfügbar“, solange das Gateway dafür keinen Wert liefert. Das ist im Betriebsmodus „intelligent“ (`GRIID_CONTROLLED`) der Fall; die Entität zeigte dort „unbekannt“ und blieb bedienbar, obwohl die Priorität in diesem Modus nicht gilt.
+
 ## 1.1.8b2 (Beta)
 
 ### Behoben

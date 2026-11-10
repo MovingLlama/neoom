@@ -92,3 +92,28 @@ async def test_setting_entities(hass: HomeAssistant, aioclient_mock) -> None:
     assert _entry("switch", "UNKNOWN_FEATURE").disabled_by is er.RegistryEntryDisabler.INTEGRATION
     # Keine doppelte Entität für denselben Schlüssel
     assert registry.async_get_entity_id("number", DOMAIN, f"{INVERTER_ID}_UNKNOWN_FEATURE_number") is None
+
+
+async def test_priority_without_value_is_unavailable(hass: HomeAssistant, aioclient_mock) -> None:
+    """Liefert das Gateway keine Priorität (Modus GRIID_CONTROLLED), ist die Entität nicht verfügbar."""
+    settings = [{"key": "PRIORITY", "value": None}, {"key": "LOCK_TIME", "value": None}]
+    mock_apis(aioclient_mock, make_beaam_config(), thing_settings={INVERTER_ID: settings})
+    entry = MockConfigEntry(domain=DOMAIN, version=2, unique_id=SITE_ID, data=ENTRY_DATA)
+    entry.add_to_hass(hass)
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+    registry = er.async_get(hass)
+
+    priority = registry.async_get_entity_id("number", DOMAIN, f"{INVERTER_ID}_PRIORITY_number")
+    lock_time = registry.async_get_entity_id("number", DOMAIN, f"{INVERTER_ID}_LOCK_TIME_number")
+    assert hass.states.get(priority).state == "unavailable"
+    # Andere Einstellungen ohne Wert bleiben bedienbar
+    assert hass.states.get(lock_time).state == "unknown"
+
+    # Sobald das Gateway wieder einen Wert liefert, ist die Priorität verfügbar
+    local = entry.runtime_data.local
+    local.async_set_updated_data(
+        {**local.data, "settings": {**local.data["settings"], INVERTER_ID: {"PRIORITY": "2", "LOCK_TIME": None}}}
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get(priority).state == "2.0"
