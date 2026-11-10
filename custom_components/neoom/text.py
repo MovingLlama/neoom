@@ -17,13 +17,6 @@ from .const import DOMAIN, LOGGER, SettingSpec
 from .coordinator import NeoomConfigEntry, NeoomLocalCoordinator
 from .helpers import classify_setting, get_friendly_thing_name
 
-# Einstellungen, die zusammen mit dem geänderten Wert in derselben Anfrage gesendet werden.
-# Das Fahrzeug setzt die neoom App gemeinsam mit Lademenge und Abfahrtszeit; EV_SELECTED allein
-# lehnt das Gateway mit "400 Bad Request" ab.
-COMPANION_SETTINGS: dict[str, tuple[str, ...]] = {
-    "EV_SELECTED": ("GRIID_CHARGING_ENERGY", "GRIID_EV_DEPARTURE_TIME"),
-}
-
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -132,14 +125,7 @@ class NeoomSettingText(CoordinatorEntity, TextEntity):
     async def async_set_value(self, value: str) -> None:
         """Wird aufgerufen, wenn der Benutzer einen neuen Text eingibt."""
         LOGGER.info("Setze Text-Einstellung %s am Gerät %s auf %s", self._setting_key, self._thing_id, value)
-        settings_map = self.coordinator.data.get("settings", {}) if self.coordinator.data else {}
-        thing_settings = settings_map.get(self._thing_id, {})
-        companions = {
-            key: thing_settings[key]
-            for key in COMPANION_SETTINGS.get(self._setting_key, ())
-            if thing_settings.get(key) is not None
-        }
-        await self.coordinator.async_send_setting(self._thing_id, self._setting_key, value, companions)
+        await self.coordinator.async_send_setting(self._thing_id, self._setting_key, value)
 
     @property
     def device_info(self) -> DeviceInfo:
