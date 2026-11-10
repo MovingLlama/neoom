@@ -20,7 +20,7 @@ ingest_state:
         text:
     value:
       name: "Wert"
-      description: "Der numerische Wert oder Textwert, der gesendet werden soll."
+      description: "Der Wert, der gesendet werden soll. Er wird im Datentyp des Datenpunkts gesendet (Zahl, Wahrheitswert oder Text)."
       required: true
       example: 250.5
       selector:

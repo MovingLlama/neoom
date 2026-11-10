@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1.8b1 (Beta)
+
+### Behoben
+- **Geräteklassen richten sich nur noch nach der Einheit.** Bisher bekam jeder Datenpunkt mit `TEMPERATURE`, `TIME` oder `DURATION` im Schlüssel die Klasse Temperatur bzw. Dauer, auch ohne passende Einheit, z. B. `MAX_CELL_TEMPERATURE_NUMBER` (Nummer einer Zelle) oder `CHARGING_PROCESS_START_TIME` (Zeitpunkt). Das führte zu Warnungen im Log. Text-Datenpunkte haben grundsätzlich keine Einheit, Geräte- oder Statusklasse mehr.
+- **`neoom.ingest_state` sendet Werte im Typ des Datenpunkts.** Zahlen gingen bisher als Text an das Gateway (`"250.5"` statt `250.5`). Jetzt wird anhand der Gerätestruktur als Zahl, Wahrheitswert oder Text gesendet; passt der Wert nicht zum Datenpunkt, wird der Aufruf abgelehnt.
+- `neoom.ingest_state` meldet Fehler jetzt an den Aufrufer (unbekanntes Gerät, Ablehnung durch das Gateway), statt sie nur ins Log zu schreiben.
+- Generic Devices werden zusätzlich am Feld `genericDataIngest` der Gerätestruktur erkannt, nicht nur an „generic“ im Typ.
+
+### Neu
+- **Cloud-Sensoren:** CO₂-Faktor (`co2_factor`, kg/kWh) und maximale Netzanschlussleistung (`max_network_utilization`, W). Dazu je Gerätegruppe (Erzeuger, Verbraucher, Speicher, Heizungen, Ladepunkte, Netze) ein Diagnose-Sensor, wie viele Geräte die Cloud gerade erreicht (Gesamtzahl im Attribut `total`); diese sind standardmäßig deaktiviert.
+- Strompreis und Einspeisetarif haben eine Statusklasse und erhalten damit Langzeitstatistiken.
+- **Einheiten:** Blindleistung (`VAr`), Scheinleistung (`VA`) und Druck (`Pa`) bekommen die passende Geräteklasse. Die Einheit der Blindleistung heißt in Home Assistant `var` statt `VAr`; für bestehende Sensoren fragt Home Assistant unter *Entwicklerwerkzeuge → Statistik* ggf. einmalig nach, ob die Einheit der Statistik angepasst werden soll.
+- Einstellungen, für die es keine passende Eingabe gibt, erscheinen nur lesend als Diagnose-Sensor, darunter `EV_SELECTED` und `GRID_FEED_IN_PRIORITIZATION_TIMES` aus der offiziellen BEAAM-API. Andere unbekannte Einstellungen dieser Art sind standardmäßig deaktiviert.
+
+### Geändert
+- **Weniger Abfragen am Gateway:** Einstellungen werden nur noch alle 60 Sekunden abgefragt statt bei jedem Zyklus (Standard 15 s). Änderungen aus Home Assistant werden weiterhin sofort abgeglichen; Änderungen aus der neoom App erscheinen nach spätestens einer Minute. Geräte ohne Einstellungen (HTTP 404) werden erst beim nächsten Laden der Gerätestruktur (alle 5 Minuten) wieder gefragt.
+
 ## 1.1.7
 
 ### Behoben
