@@ -1,64 +1,22 @@
 # Changelog
 
-## 1.1.8b8 (Beta)
-
-### Geändert
-- **„Selected EV“ (`EV_SELECTED`) ist wieder ein nur lesender Sensor.** Das Gateway (API 2.15.0) lehnt das Schreiben der Fahrzeugwahl mit „400 Bad Request“ ab, allein wie auch zusammen mit Lademenge und Abfahrtszeit. Der Sensor zeigt die Kennung des am Ladepunkt ausgewählten Fahrzeugs und ist standardmäßig aktiv; das Textfeld aus 1.1.8b2 wird entfernt.
-
-## 1.1.8b7 (Beta)
-
-### Geändert
-- Der Versuch aus 1.1.8b6 ist zurückgenommen: Das Gateway lehnt `EV_SELECTED` auch dann mit „400 Bad Request“ ab, wenn Lademenge und Abfahrtszeit in derselben Anfrage mitgesendet werden. „Selected EV“ wird wieder allein gesendet.
-
-## 1.1.8b6 (Beta)
-
-### Geändert
-- **Versuch:** „Selected EV“ (`EV_SELECTED`) wurde zusammen mit der aktuellen Lademenge (`GRIID_CHARGING_ENERGY`) und Abfahrtszeit (`GRIID_EV_DEPARTURE_TIME`) in einer Anfrage gesendet.
-
-## 1.1.8b5 (Beta)
-
-### Behoben
-- Die Option „1-phasig“ der Phasenumschaltung sendet `ONE_PHASE`. Das in 1.1.8b4 gesendete `SINGLE_PHASE` lehnte das Gateway ab. Damit sind alle drei Optionen („Automatisch“, „1-phasig“, „3-phasig“) am Gateway bestätigt.
-
-## 1.1.8b4 (Beta)
-
-### Behoben
-- **Lesbare Fehlermeldung, wenn das Gateway einen Wert ablehnt.** Bisher kam die Ablehnung einer Einstellung, eines Befehls oder eines State-Ingests als roher HTTP-Fehler in Home Assistant an (in der Oberfläche „Unbekannter Fehler“, über die API HTTP 500). Jetzt nennt die Meldung Schlüssel, Wert und den Status des Gateways.
-- **Optionen der Phasenumschaltung (`PHASE_SWITCHING_MODE`) entsprechen den Werten des Gateways:** „Automatisch“, „1-phasig“ (`SINGLE_PHASE`) und „3-phasig“ (`THREE_PHASE`). Die bisherigen Optionen „1 Phase erzwingen“ und „3 Phasen erzwingen“ lehnte das Gateway ab. `AUTOMATIC` und `THREE_PHASE` sind am Gateway bestätigt, `SINGLE_PHASE` noch nicht.
-
-### Bekannt
-- Das Schreiben von „Selected EV“ (`EV_SELECTED`) lehnt das Gateway (API 2.15.0) derzeit mit „400 Bad Request“ ab, auch mit dem bereits gesetzten Wert.
-
-## 1.1.8b3 (Beta)
-
-### Behoben
-- Die Priorität (`PRIORITY`) ist „nicht verfügbar“, solange das Gateway dafür keinen Wert liefert. Das ist im Betriebsmodus „intelligent“ (`GRIID_CONTROLLED`) der Fall; die Entität zeigte dort „unbekannt“ und blieb bedienbar, obwohl die Priorität in diesem Modus nicht gilt.
-
-## 1.1.8b2 (Beta)
-
-### Behoben
-- Die maximale Netzanschlussleistung (`max_network_utilization`) wird aus den Energiefluss-Daten der Cloud gelesen; unter den Stammdaten der Site steht sie nicht, der Sensor blieb „unbekannt“.
-- Cloud-Sensoren, deren Feld die Cloud für die Site nicht liefert (z. B. `co2_factor`), werden nicht mehr angelegt; eine in 1.1.8b1 angelegte leere Entität wird entfernt.
-- Auswahl-Entitäten zeigen Werte an, die das Gateway meldet, die aber nicht in der Optionsliste stehen, statt „unbekannt“. Betroffen war die Phasenumschaltung des Ladepunkts (`PHASE_SWITCHING_MODE`): Das Gateway meldet z. B. `THREE_PHASE` („3-phasig“).
-- Wärmemengen der Wärmepumpe (`THERMAL_ENERGY`, `HEATING_ENERGY`, `COOLING_ENERGY`) haben die Statusklasse `total` statt `total_increasing`. Die Werte schwanken leicht, was Home Assistant als Zähler-Reset wertete und im Log bemängelte („state is not strictly increasing“).
-
-### Neu
-- **Ausgewähltes Fahrzeug am Ladepunkt (`EV_SELECTED`) ist beschreibbar:** Die Einstellung erscheint als Textfeld („Selected EV“) mit der Kennung des Fahrzeugs und lässt sich auch per `text.set_value` setzen. Eine Liste der Fahrzeuge mit Namen liefert die API nicht. Der in 1.1.8b1 angelegte, nur lesende Sensor wird entfernt.
-- Cloud-Diagnose-Sensoren für Anlagendaten, sofern die Cloud sie liefert: maximale Einspeiseleistung, maximale Erzeuger- und Speicherleistung, gesamte Speicherkapazität.
-
-## 1.1.8b1 (Beta)
+## 1.1.8
 
 ### Behoben
 - **Geräteklassen richten sich nur noch nach der Einheit.** Bisher bekam jeder Datenpunkt mit `TEMPERATURE`, `TIME` oder `DURATION` im Schlüssel die Klasse Temperatur bzw. Dauer, auch ohne passende Einheit, z. B. `MAX_CELL_TEMPERATURE_NUMBER` (Nummer einer Zelle) oder `CHARGING_PROCESS_START_TIME` (Zeitpunkt). Das führte zu Warnungen im Log. Text-Datenpunkte haben grundsätzlich keine Einheit, Geräte- oder Statusklasse mehr.
 - **`neoom.ingest_state` sendet Werte im Typ des Datenpunkts.** Zahlen gingen bisher als Text an das Gateway (`"250.5"` statt `250.5`). Jetzt wird anhand der Gerätestruktur als Zahl, Wahrheitswert oder Text gesendet; passt der Wert nicht zum Datenpunkt, wird der Aufruf abgelehnt.
-- `neoom.ingest_state` meldet Fehler jetzt an den Aufrufer (unbekanntes Gerät, Ablehnung durch das Gateway), statt sie nur ins Log zu schreiben.
+- **Lesbare Fehlermeldung, wenn das Gateway einen Wert ablehnt.** Bisher kam die Ablehnung einer Einstellung, eines Befehls oder eines State-Ingests als roher HTTP-Fehler in Home Assistant an (in der Oberfläche „Unbekannter Fehler“). Jetzt nennt die Meldung Schlüssel, Wert und den Status des Gateways. `neoom.ingest_state` meldet außerdem ein unbekanntes Gerät an den Aufrufer, statt es nur ins Log zu schreiben.
+- **Phasenumschaltung des Ladepunkts (`PHASE_SWITCHING_MODE`):** Die Optionen sind „Auto“ (`AUTOMATIC`), „1-phasig“ (`ONE_PHASE`) und „3-phasig“ (`THREE_PHASE`); alle drei sind am Gateway bestätigt. Die bisherigen Optionen „1 Phase erzwingen“ und „3 Phasen erzwingen“ lehnte das Gateway ab, und der gemeldete Wert `THREE_PHASE` wurde als „unbekannt“ angezeigt.
+- Auswahl-Entitäten zeigen Werte an, die das Gateway meldet, die aber nicht in der Optionsliste stehen, statt „unbekannt“.
+- Die Priorität (`PRIORITY`) ist „nicht verfügbar“, solange das Gateway dafür keinen Wert liefert. Das ist im Betriebsmodus „intelligent“ (`GRIID_CONTROLLED`) der Fall; die Entität zeigte dort „unbekannt“ und blieb bedienbar, obwohl die Priorität in diesem Modus nicht gilt.
+- Wärmemengen der Wärmepumpe (`THERMAL_ENERGY`, `HEATING_ENERGY`, `COOLING_ENERGY`) haben die Statusklasse `total` statt `total_increasing`. Die Werte schwanken leicht, was Home Assistant als Zähler-Reset wertete und im Log bemängelte („state is not strictly increasing“).
 - Generic Devices werden zusätzlich am Feld `genericDataIngest` der Gerätestruktur erkannt, nicht nur an „generic“ im Typ.
 
 ### Neu
-- **Cloud-Sensoren:** CO₂-Faktor (`co2_factor`, kg/kWh) und maximale Netzanschlussleistung (`max_network_utilization`, W). Dazu je Gerätegruppe (Erzeuger, Verbraucher, Speicher, Heizungen, Ladepunkte, Netze) ein Diagnose-Sensor, wie viele Geräte die Cloud gerade erreicht (Gesamtzahl im Attribut `total`); diese sind standardmäßig deaktiviert.
+- **Cloud-Sensoren:** maximale Netzanschlussleistung (`max_network_utilization`, W) und, sofern die Cloud sie für die Site liefert, CO₂-Faktor (`co2_factor`, kg/kWh) sowie als Diagnose-Sensoren maximale Einspeiseleistung, maximale Erzeuger- und Speicherleistung und gesamte Speicherkapazität. Dazu je Gerätegruppe (Erzeuger, Verbraucher, Speicher, Heizungen, Ladepunkte, Netze) ein Diagnose-Sensor, wie viele Geräte die Cloud gerade erreicht (Gesamtzahl im Attribut `total`); diese sind standardmäßig deaktiviert.
 - Strompreis und Einspeisetarif haben eine Statusklasse und erhalten damit Langzeitstatistiken.
 - **Einheiten:** Blindleistung (`VAr`), Scheinleistung (`VA`) und Druck (`Pa`) bekommen die passende Geräteklasse. Die Einheit der Blindleistung heißt in Home Assistant `var` statt `VAr`; für bestehende Sensoren fragt Home Assistant unter *Entwicklerwerkzeuge → Statistik* ggf. einmalig nach, ob die Einheit der Statistik angepasst werden soll.
-- Einstellungen, für die es keine passende Eingabe gibt, erscheinen nur lesend als Diagnose-Sensor, darunter `GRID_FEED_IN_PRIORITIZATION_TIMES` aus der offiziellen BEAAM-API. Andere unbekannte Einstellungen dieser Art sind standardmäßig deaktiviert.
+- **Nur lesende Einstellungen als Diagnose-Sensor:** Einstellungen, für die es keine passende Eingabe gibt, erscheinen als Sensor, darunter `GRID_FEED_IN_PRIORITIZATION_TIMES` und das am Ladepunkt ausgewählte Fahrzeug („Selected EV“, `EV_SELECTED`, Kennung des Fahrzeugs). Das Schreiben der Fahrzeugwahl lehnt das Gateway (API 2.15.0) mit „400 Bad Request“ ab, eine Liste der Fahrzeuge liefert die API nicht. Andere unbekannte Einstellungen dieser Art sind standardmäßig deaktiviert.
 
 ### Geändert
 - **Weniger Abfragen am Gateway:** Einstellungen werden nur noch alle 60 Sekunden abgefragt statt bei jedem Zyklus (Standard 15 s). Änderungen aus Home Assistant werden weiterhin sofort abgeglichen; Änderungen aus der neoom App erscheinen nach spätestens einer Minute. Geräte ohne Einstellungen (HTTP 404) werden erst beim nächsten Laden der Gerätestruktur (alle 5 Minuten) wieder gefragt.
