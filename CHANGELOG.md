@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.8b8 (Beta)
+
+### Geändert
+- **„Selected EV“ (`EV_SELECTED`) ist wieder ein nur lesender Sensor.** Das Gateway (API 2.15.0) lehnt das Schreiben der Fahrzeugwahl mit „400 Bad Request“ ab, allein wie auch zusammen mit Lademenge und Abfahrtszeit. Der Sensor zeigt die Kennung des am Ladepunkt ausgewählten Fahrzeugs und ist standardmäßig aktiv; das Textfeld aus 1.1.8b2 wird entfernt.
+
 ## 1.1.8b7 (Beta)
 
 ### Geändert

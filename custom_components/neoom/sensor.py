@@ -70,7 +70,13 @@ MAX_STATE_LENGTH = 255
 
 # Einstellungen aus der offiziellen BEAAM-API, für die es keine passende Eingabe-Plattform gibt
 # (Format der Werte nicht dokumentiert). Sie werden nur lesend als Sensor angezeigt.
-READ_ONLY_SETTINGS = ("GRID_FEED_IN_PRIORITIZATION_TIMES",)
+# EV_SELECTED (Kennung des am Ladepunkt ausgewählten Fahrzeugs) lehnt das Gateway beim Schreiben
+# mit "400 Bad Request" ab; eine Liste der Fahrzeuge liefert die API nicht.
+READ_ONLY_SETTINGS = ("GRID_FEED_IN_PRIORITIZATION_TIMES", "EV_SELECTED")
+
+# Abweichende Namen und Icons für nur lesende Einstellungen
+SETTING_SENSOR_NAMES = {"EV_SELECTED": "Selected EV"}
+SETTING_SENSOR_ICONS = {"EV_SELECTED": "mdi:car-electric"}
 
 
 @dataclass(frozen=True)
@@ -309,6 +315,10 @@ async def async_setup_entry(
                     continue
                 if unique_id not in known_sensor_ids:
                     known_sensor_ids.add(unique_id)
+                    # Textfeld aus 1.1.8b2 bis b7, das der Sensor wieder ablöst
+                    stale_id = entity_registry.async_get_entity_id("text", DOMAIN, f"{thing_id}_{key}_text")
+                    if stale_id:
+                        entity_registry.async_remove(stale_id)
                     new_entities.append(
                         NeoomSettingSensor(
                             coordinator=local_coordinator,
@@ -786,9 +796,11 @@ class NeoomSettingSensor(CoordinatorEntity[NeoomLocalCoordinator], SensorEntity)
         beaam_config = coordinator.data.get("config", {}) if coordinator.data else {}
         self._friendly_thing_name = get_friendly_thing_name(beaam_config, thing_id, self._thing_type)
 
-        self._attr_name = setting_key.replace("_", " ").title()
+        self._attr_name = SETTING_SENSOR_NAMES.get(setting_key) or setting_key.replace("_", " ").title()
         self._attr_unique_id = f"{thing_id}_{setting_key}_setting"
         self._attr_entity_registry_enabled_default = setting_key in READ_ONLY_SETTINGS
+        if setting_key in SETTING_SENSOR_ICONS:
+            self._attr_icon = SETTING_SENSOR_ICONS[setting_key]
 
     @property
     def native_value(self) -> str | None:

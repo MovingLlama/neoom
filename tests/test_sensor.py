@@ -10,7 +10,6 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.neoom.const import CLOUD_API_URL, DOMAIN
 
 from .conftest import (
-    BEAAM_IP,
     ENTRY_DATA,
     INVERTER_ID,
     SITE_ID,
@@ -315,7 +314,7 @@ async def test_thermal_energy_is_total(hass: HomeAssistant, aioclient_mock) -> N
 
 
 async def test_read_only_setting_sensors(hass: HomeAssistant, aioclient_mock) -> None:
-    """Einstellungen ohne Eingabe-Plattform erscheinen nur lesend als Sensor; EV_SELECTED ist ein Textfeld."""
+    """Einstellungen ohne Eingabe-Plattform erscheinen nur lesend als Sensor, auch EV_SELECTED."""
     mock_apis(
         aioclient_mock,
         make_beaam_config(),
@@ -331,23 +330,19 @@ async def test_read_only_setting_sensors(hass: HomeAssistant, aioclient_mock) ->
     entry = MockConfigEntry(domain=DOMAIN, version=2, unique_id=SITE_ID, title="Haus", data=ENTRY_DATA)
     entry.add_to_hass(hass)
     registry = er.async_get(hass)
-    # Sensor aus 1.1.8b1, den die Text-Entität ablöst
-    registry.async_get_or_create("sensor", DOMAIN, f"{INVERTER_ID}_EV_SELECTED_setting", config_entry=entry)
+    # Textfeld aus 1.1.8b2 bis b7, das der Sensor wieder ablöst
+    registry.async_get_or_create("text", DOMAIN, f"{INVERTER_ID}_EV_SELECTED_text", config_entry=entry)
     assert await async_setup_component(hass, DOMAIN, {})
     await hass.async_block_till_done()
 
     times = hass.states.get(_entity_id(hass, f"{INVERTER_ID}_GRID_FEED_IN_PRIORITIZATION_TIMES_setting"))
     assert times.state == "08:00-12:00"
-    assert registry.async_get_entity_id("sensor", DOMAIN, f"{INVERTER_ID}_EV_SELECTED_setting") is None
 
-    ev_id = registry.async_get_entity_id("text", DOMAIN, f"{INVERTER_ID}_EV_SELECTED_text")
-    assert hass.states.get(ev_id).state == "ev-123"
-    aioclient_mock.put(f"http://{BEAAM_IP}/api/v1/things/{INVERTER_ID}/settings", json={})
-    await hass.services.async_call("text", "set_value", {"entity_id": ev_id, "value": "ev-456"}, blocking=True)
-    puts = [call for call in aioclient_mock.mock_calls if call[0] == "PUT"]
-    assert puts[0][2] == [{"key": "EV_SELECTED", "value": "ev-456"}]
-    assert hass.states.get(ev_id).state == "ev-456"
-    await hass.config_entries.async_unload(entry.entry_id)
+    selected_ev = hass.states.get(_entity_id(hass, f"{INVERTER_ID}_EV_SELECTED_setting"))
+    assert selected_ev.state == "ev-123"
+    assert selected_ev.attributes["icon"] == "mdi:car-electric"
+    assert registry.async_get_entity_id("text", DOMAIN, f"{INVERTER_ID}_EV_SELECTED_text") is None
+
     unknown = registry.async_get(_entity_id(hass, f"{INVERTER_ID}_SOME_LABEL_setting"))
     assert unknown.disabled_by is er.RegistryEntryDisabler.INTEGRATION
     # Einstellungen mit eigener Plattform bekommen keinen zusätzlichen Sensor
