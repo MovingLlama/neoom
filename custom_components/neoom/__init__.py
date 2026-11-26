@@ -11,10 +11,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import (
-    ConfigEntryNotReady,
-    ServiceValidationError,
-)
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
@@ -109,15 +106,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: NeoomConfigEntry) -> boo
     # dass beim Start von Home Assistant erste Daten vorhanden sind.
     await cloud_coordinator.async_config_entry_first_refresh()
 
-    try:
-        await local_coordinator.async_config_entry_first_refresh()
-    except Exception as err:
-        LOGGER.warning(
-            "Fehler beim initialen Abruf der lokalen BEAAM Daten (%s). "
-            "Setze Einrichtung aus: Home Assistant unternimmt automatische Wiederholungsversuche.",
-            err,
-        )
-        raise ConfigEntryNotReady(f"BEAAM Gateway unter {beaam_ip} nicht erreichbar: {err}") from err
+    # Kein eigenes try/except: async_config_entry_first_refresh wirft bei Abruffehlern bereits
+    # ConfigEntryNotReady (HA wiederholt die Einrichtung) und lässt ConfigEntryAuthFailed durch,
+    # damit bei einem abgewiesenen BEAAM Key der Reauth-Dialog startet.
+    await local_coordinator.async_config_entry_first_refresh()
 
     # Die Coordinators hängen am Eintrag selbst, damit die Plattformen (Sensor, Number, ...)
     # darauf zugreifen können. Home Assistant räumt sie beim Entladen mit dem Eintrag weg.

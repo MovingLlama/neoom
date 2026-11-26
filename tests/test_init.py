@@ -75,6 +75,29 @@ async def test_setup_ignores_credentials_in_options(hass: HomeAssistant, aioclie
     assert coordinators.cloud.token == ENTRY_DATA[CONF_CLOUD_TOKEN]
 
 
+async def test_rejected_beaam_key_at_setup_starts_reauth(hass: HomeAssistant, aioclient_mock) -> None:
+    """Ein beim Start abgewiesener BEAAM Key startet den Reauth-Dialog statt endloser Wiederholungen."""
+    aioclient_mock.get(f"http://{BEAAM_IP}/api/v1/site/configuration", status=401)
+    mock_apis(aioclient_mock, make_beaam_config())
+    entry = MockConfigEntry(domain=DOMAIN, version=2, unique_id=SITE_ID, data=ENTRY_DATA)
+    await _setup(hass, entry)
+
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    flows = hass.config_entries.flow.async_progress()
+    assert [(f["handler"], f["context"]["source"]) for f in flows] == [(DOMAIN, "reauth")]
+
+
+async def test_unreachable_gateway_at_setup_retries(hass: HomeAssistant, aioclient_mock) -> None:
+    """Ist das Gateway beim Start nicht erreichbar, wiederholt Home Assistant die Einrichtung."""
+    aioclient_mock.get(f"http://{BEAAM_IP}/api/v1/site/configuration", exc=TimeoutError)
+    mock_apis(aioclient_mock, make_beaam_config())
+    entry = MockConfigEntry(domain=DOMAIN, version=2, unique_id=SITE_ID, data=ENTRY_DATA)
+    await _setup(hass, entry)
+
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    assert not hass.config_entries.flow.async_progress()
+
+
 async def test_ingest_only_for_generic_devices(hass: HomeAssistant, aioclient_mock) -> None:
     """Ingest-Entitäten nur für Generic Devices; alte deaktivierte werden entfernt, aktivierte bleiben."""
     mock_apis(aioclient_mock, make_beaam_config())
