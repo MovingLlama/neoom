@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.9
+
+### Behoben
+- Das Icon der Integration (`brand/icon.png`) ist 256×256 statt 48×48 Pixel groß, wie hassfest es verlangt. Die Kopien im Repository-Root und in `custom_components/neoom/` wurden ebenfalls ersetzt.
+
 ## 1.1.8
 
 ### Behoben
