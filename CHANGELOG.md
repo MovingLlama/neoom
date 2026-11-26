@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.10
+
+### Behoben
+- **Reauth startet auch beim Einrichten.** Lehnte das BEAAM Gateway den API Key schon beim Start ab (z. B. nach dem Rotieren des Keys und einem Neustart), wurde der Fehler als „nicht erreichbar“ behandelt: Home Assistant versuchte die Einrichtung endlos erneut, und der Dialog zum Eingeben eines neuen Keys erschien nie. Jetzt startet in diesem Fall der Reauth-Dialog. Ist das Gateway tatsächlich nicht erreichbar, wiederholt Home Assistant die Einrichtung wie bisher.
+
 ## 1.1.9
 
 ### Behoben
